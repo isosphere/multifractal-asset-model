@@ -4,14 +4,6 @@ extern crate csv;
 extern crate ndarray;
 extern crate ndarray_csv;
 
-use conv::*;
-use csv::{ReaderBuilder, WriterBuilder};
-
-use linreg::linear_regression;
-
-use ndarray::{Array, Array1, Array2, Axis, stack, s};
-use ndarray_csv::{Array2Reader, Array2Writer};
-
 use std::{
     error::Error,
     fmt,
@@ -22,12 +14,18 @@ use std::{
     }
 };
 
+use conv::*;
+use csv::ReaderBuilder;
+
+use linreg::linear_regression;
+
+use ndarray::{Array, Array1, Array2, Axis, stack, s};
+use ndarray_csv::Array2Reader;
+
 use num::{One, Zero};
 
 /// Path to asset price data
-//const DATA_PATH: &str = "D:\\SPX_since_1950-01-03_inclusive.csv";
-const DATA_PATH: &str = "D:\\SPX_since_2001-06-15_inclusive.csv";
-const OUTPUT_PATH: &str = "D:\\scaling_function.csv";
+const DATA_PATH: &str = "D:\\SPX_since_1950-01-03_inclusive.csv";
 
 #[derive(Debug)]
 struct AnalysisFailure(String);
@@ -86,6 +84,10 @@ fn test_hcn() {
     }
 }
 
+/// Calculates the compounding natural log price for prices stored in a CSV file.
+/// 
+/// The compounding natural log price is X(t) = ln(P(t)) - ln(P(0))
+/// This results in a series that begins at zero and represents the ln of the ratio of P(t) to the initial price.
 fn compound_price(file_path: &str) -> Result<Array1<f32>, Box<dyn Error>> {
     let file = File::open(file_path)?;
     let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
@@ -95,9 +97,13 @@ fn compound_price(file_path: &str) -> Result<Array1<f32>, Box<dyn Error>> {
     Ok(array_read.index_axis(Axis(1), 1).map(|p| p.ln() - first_price))
 }
 
-/// S(q, T, delta_T) -  q == moment, T == highly_composite_number, delta_t = factors
+/// Calculates the **natural log** of the partition function for the series across all moments and factors.
+///
+/// The partition function is defined as:
 /// S(q, T, delta_T) = sum_{i=0, N-1} abs( Xt(deltaT*(i+1)) - Xt(i*deltaT) )**q
-/// N = total number of time increments for that particular deltaT
+///
+/// Where q == moment, T == highly_composite_number, the total series length, delta_t = factor
+/// N = total number of time increments for that particular deltaT = (T/delta_T)
 fn calc_partition_function(xt: &Array1<f32>, moments: &Array1<f32>, factors: &[usize]) -> Array2<f32> {
     let mut partition_function: Array2<f32> = Array2::zeros((moments.shape()[0], factors.len()));
     let highly_composite_number = factors.last().copied().unwrap();
@@ -113,6 +119,7 @@ fn calc_partition_function(xt: &Array1<f32>, moments: &Array1<f32>, factors: &[u
     partition_function
 } 
 
+/// Calculates the Hurst-Holder exponent for a fractal series.
 fn calc_holder(partition_function: &Array2<f32>, moments: &Array1<f32>, factors: &[usize]) -> Result<f32, Box<dyn Error>> {
     let ln_factors: Vec<f32> = factors.iter().map(|f| f32::value_from(*f).unwrap().ln() ).collect();
     let mut scaling_function: Array2<f32> = Array2::zeros((moments.shape()[0], 2));
@@ -183,7 +190,10 @@ fn main() {
 
     let partition_function = calc_partition_function(&xt, &moments, &factors);
 
-    let holder = calc_holder(&partition_function, &moments, &factors).unwrap();
-    println!("Holder exponent: {:.2}", holder)
+    for i in 0 .. factors.len() - 1 {
+        let max_index = factors.len() - i;
 
+        let holder = calc_holder(&partition_function.slice(s![.., 0..max_index]).to_owned(), &moments, &factors[..max_index]).unwrap();
+        println!("{},{:.4}", factors[max_index-1], holder)
+    }
 }
