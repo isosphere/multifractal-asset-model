@@ -1,0 +1,15 @@
+[package]
+name = "multifractal-asset-model"
+version = "0.1.0"
+authors = ["Matthew Scheffel <mscheffel@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+csv = "1.1"
+conv = "0.3.3"
+linreg = "0.2.0"
+ndarray = "0.13"
+ndarray-csv = "0.4"
+num = "0.3"
