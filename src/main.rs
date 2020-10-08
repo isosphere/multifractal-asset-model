@@ -23,6 +23,7 @@ use std::{
 use num::{One, Zero};
 
 /// Path to asset price data
+//const DATA_PATH: &str = "D:\\SPX_since_1950-01-03_inclusive.csv";
 const DATA_PATH: &str = "D:\\SPX_since_1950-01-03_inclusive.csv";
 const OUTPUT_PATH: &str = "D:\\scaling_function.csv";
 
@@ -119,8 +120,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         let y = partition_function.slice(s![m, ..]).to_vec();
         //println!("y = {:?}", y);
         let (slope, _intercept): (f32, f32) = match linear_regression(&ln_factors[..ln_factors.len()], &y) {
-            Ok((slope, _intercept)) => (slope, _intercept),
-            Err(e) => {panic!("Error: {}", e)}
+            Ok((slope, _intercept)) => {
+                (slope, _intercept)
+            },
+            Err(e) => {
+                println!("q = {}, slope error: '{}'. breaking from loop", q, e);
+                break;
+            }
         };
         scaling_function[[m, 0]] = *q;
         scaling_function[[m, 1]] = slope;
