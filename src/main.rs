@@ -19,7 +19,7 @@ use csv::ReaderBuilder;
 
 use linreg::linear_regression;
 
-use ndarray::{Array, Array1, Array2, Axis, stack, s};
+use ndarray::{Array, Array1, arr1, Array2, arr2, Axis, stack, s};
 use ndarray_csv::Array2Reader;
 
 use num::{One, Zero};
@@ -88,13 +88,74 @@ fn test_hcn() {
 /// 
 /// The compounding natural log price is X(t) = ln(P(t)) - ln(P(0))
 /// This results in a series that begins at zero and represents the ln of the ratio of P(t) to the initial price.
-fn compound_price(file_path: &str) -> Result<Array1<f32>, Box<dyn Error>> {
-    let file = File::open(file_path)?;
-    let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
-    let array_read: Array2<f32> = reader.deserialize_array2_dynamic()?;
-
+fn compound_price(array_read: &Array2<f32>) -> Array1<f32> {
     let first_price = array_read.slice(s![0, 1]).first().unwrap().ln();
-    Ok(array_read.index_axis(Axis(1), 1).map(|p| p.ln() - first_price))
+    array_read.index_axis(Axis(1), 1).map(|p| p.ln() - first_price)
+}
+
+#[test]
+fn test_compound_price() {
+    let test_array = arr2(&[
+        [0.00,16.66],
+        [1.00,16.85],
+        [2.00,16.93],
+        [3.00,16.98],
+        [4.00,17.08],
+        [5.00,17.030001],
+        [6.00,17.09],
+        [7.00,16.76],
+        [8.00,16.67],
+        [9.00,16.72],
+        [10.00,16.86],
+        [11.00,16.85],
+        [12.00,16.87],
+        [13.00,16.90],
+        [14.00,16.92],
+        [15.00,16.86],
+        [16.00,16.74],
+        [17.00,16.73],
+        [18.00,16.82],
+        [19.00,17.02],
+        [20.00,2643.850098],
+        [21.00,2640.000000],
+        [22.00,2681.050049],
+        [26.00,2704.100098],
+        [27.00,2706.530029]
+    ]);
+
+    let xt = compound_price(&test_array);
+    let known_answer: Array1<f32> = arr1(&[
+        0.000000,
+        0.011340,
+        0.016077,
+        0.019026,
+        0.024898,
+        0.021966,
+        0.025483,
+        0.005984,
+        0.000600,
+        0.003595,
+        0.011933,
+        0.011340,
+        0.012526,
+        0.014303,
+        0.015486,
+        0.011933,
+        0.004790,
+        0.004193,
+        0.009558,
+        0.021378,
+        5.066981,
+        5.065524,
+        5.080953,
+        5.089514,
+        5.090412
+    ]);
+
+    let significance = 1e4;
+    for (m, ans) in xt.iter().enumerate() {
+        assert_eq!((significance*ans).round(), (significance*known_answer[m]).round())
+    }
 }
 
 /// Calculates the **natural log** of the partition function for the series across all moments and factors.
@@ -107,7 +168,6 @@ fn compound_price(file_path: &str) -> Result<Array1<f32>, Box<dyn Error>> {
 fn calc_partition_function(xt: &Array1<f32>, moments: &Array1<f32>, factors: &[usize]) -> Array2<f32> {
     let mut partition_function: Array2<f32> = Array2::zeros((moments.shape()[0], factors.len()));
     let highly_composite_number = factors.last().copied().unwrap();
-
 
     for (m, q) in moments.iter().enumerate() {
         for (n, delta_t) in factors.iter().enumerate() {    
@@ -167,7 +227,11 @@ fn calc_holder(partition_function: &Array2<f32>, moments: &Array1<f32>, factors:
 }
 
 fn main() {
-    let xt = compound_price(DATA_PATH).unwrap();
+    let file = File::open(DATA_PATH).unwrap();
+    let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
+    let array_read: Array2<f32> = reader.deserialize_array2_dynamic().unwrap();
+        
+    let xt = compound_price(&array_read);
 
     // We expect the zero crossover to occur somewhere around 2.0, so we use more points around there.
     let moments = stack![
