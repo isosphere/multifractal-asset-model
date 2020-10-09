@@ -88,7 +88,7 @@ fn test_hcn() {
 /// 
 /// The compounding natural log price is X(t) = ln(P(t)) - ln(P(0))
 /// This results in a series that begins at zero and represents the ln of the ratio of P(t) to the initial price.
-fn compound_price(array_read: &Array2<f32>) -> Array1<f32> {
+fn compound_price(array_read: &Array2<f64>) -> Array1<f64> {
     let first_price = array_read.slice(s![0, 1]).first().unwrap().ln();
     array_read.index_axis(Axis(1), 1).map(|p| p.ln() - first_price)
 }
@@ -124,32 +124,9 @@ fn test_compound_price() {
     ]);
 
     let xt = compound_price(&test_array);
-    let known_answer: Array1<f32> = arr1(&[
-        0.000000,
-        0.011340,
-        0.016077,
-        0.019026,
-        0.024898,
-        0.021966,
-        0.025483,
-        0.005984,
-        0.000600,
-        0.003595,
-        0.011933,
-        0.011340,
-        0.012526,
-        0.014303,
-        0.015486,
-        0.011933,
-        0.004790,
-        0.004193,
-        0.009558,
-        0.021378,
-        5.066981,
-        5.065524,
-        5.080953,
-        5.089514,
-        5.090412
+    let known_answer: Array1<f64> = arr1(&[
+        0.000000, 0.011340, 0.016077, 0.019026, 0.024898, 0.021966, 0.025483, 0.005984, 0.000600, 0.003595, 0.011933, 0.011340, 
+        0.012526, 0.014303, 0.015486, 0.011933, 0.004790, 0.004193, 0.009558, 0.021378, 5.066981, 5.065524, 5.080953, 5.089514, 5.090412
     ]);
 
     let significance = 1e4;
@@ -165,32 +142,88 @@ fn test_compound_price() {
 ///
 /// Where q == moment, T == highly_composite_number, the total series length, delta_t = factor
 /// N = total number of time increments for that particular deltaT = (T/delta_T)
-fn calc_partition_function(xt: &Array1<f32>, moments: &Array1<f32>, factors: &[usize]) -> Array2<f32> {
-    let mut partition_function: Array2<f32> = Array2::zeros((moments.shape()[0], factors.len()));
+fn calc_partition_function(xt: &Array1<f64>, moments: &Array1<f64>, factors: &[usize]) -> Array2<f64> {
+    let mut partition_function: Array2<f64> = Array2::zeros((moments.shape()[0], factors.len()));
     let highly_composite_number = factors.last().copied().unwrap();
 
     for (m, q) in moments.iter().enumerate() {
         for (n, delta_t) in factors.iter().enumerate() {    
             let total_increments = highly_composite_number / delta_t;
-            partition_function[[m, n]] = (0 .. total_increments).map(|i| (xt[[delta_t*(i+1)]] - xt[[delta_t*i]]).abs().powf(*q) ).sum::<f32>().ln();
+            partition_function[[m, n]] = (0 .. total_increments).map(|i| (xt[[delta_t*(i+1)]] - xt[[delta_t*i]]).abs().powf(*q) ).sum::<f64>().ln();
         }
     }
 
     partition_function
-} 
+}
+
+#[test]
+fn test_calc_partition_function() {
+    let significance = 0.001; // relative error that is acceptable
+
+    let moments = Array::linspace(0.01, 30.0, 10);
+
+    // this part of the test is overkill, but I want to prevent any doubt about my approach
+    let known_q = arr1(&[
+        1.00000000e-02, 3.34222222e+00, 6.67444444e+00, 1.00066667e+01, 1.33388889e+01, 1.66711111e+01, 2.00033333e+01, 2.33355556e+01, 2.66677778e+01, 3.00000000e+01
+    ]);
+
+    for (i, q) in moments.iter().enumerate() {
+        let relative_error = q / known_q[[i]] - 1.0;
+        assert!(relative_error < significance);
+    }    
+
+    let xt = arr1(&[0.00000000,0.01134002,0.016076559,0.019025544,0.024897552,0.021965917,0.02548286,0.005984458,0.00060006,0.003594911,0.011933375,0.01134002,0.012526319,0.014302985,0.015485717,0.011933375,0.004790428,0.004192878,0.009558018,0.021378486,0.023139508,0.023139508,0.033641414,0.037117721,0.038851266,0.033641414,0.032479915,0.036539185,0.034221628,0.023725847,0.023725847,0.019614299,0.028987537,0.031898805,0.030153038,0.032479915,0.036539185,0.036539185,0.033060804,0.034221628,0.033641414,0.037117721,0.038851266,0.031898805,0.031317241,0.0243119,0.02548286,0.027236792,0.034801507,0.046329069,0.048618652,0.046329069,0.045755839,0.046329069,0.052043256,0.052612895,0.052612895,0.046901856,0.050903119,0.045755839,0.037695806961566714]);
+
+    let data_size = xt.shape()[0];
+
+    let highly_composite_number = highest_highly_composite_number(&data_size);
+    assert_eq!(60, highly_composite_number);
+
+    let factors = (1 ..=highly_composite_number).filter(|i| highly_composite_number % i == 0).collect::<Vec<usize>>();
+    assert_eq!(factors, vec![1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60]);
+
+    let partition_function = calc_partition_function(&xt, &moments, &factors);
+
+    let known_answer: Array2<f64> = arr2(&[
+        [3.967510,3.347519,2.945823,2.660320,2.350929,2.256823,1.742334,1.556920,1.334820,1.052536,0.653091,-0.032782],
+        [-12.337398,-11.642580,-11.683057,-11.281222,-11.624566,-11.043196,-13.146384,-12.075256,-13.568661,-12.515851,-12.346634,-10.956494],
+        [-26.144715,-24.535301,-24.998577,-23.920255,-24.361315,-23.190093,-27.603135,-24.269535,-28.152549,-25.132259,-24.941629,-21.880207],
+        [-39.379117,-36.940050,-37.970071,-36.340695,-36.878809,-35.099891,-41.844315,-36.396039,-42.696375,-37.686877,-37.431865,-32.803919],
+        [-52.517361,-49.264313,-50.819039,-48.704955,-49.349076,-46.945786,-55.955238,-48.516667,-57.202608,-50.237081,-49.902467,-43.727631],
+        [-65.640627,-61.575243,-63.616621,-61.051755,-61.796663,-58.762046,-70.002922,-60.636798,-71.676051,-62.786967,-62.369652,-54.651343],
+        [-78.761479,-73.883704,-76.388694,-73.391939,-74.228448,-70.559952,-84.022884,-72.756888,-86.122677,-75.336830,-74.836251,-65.575056],
+        [-91.881930,-86.191666,-89.146482,-85.728869,-86.648310,-82.345826,-98.031081,-84.876975,-100.548506,-87.886691,-87.302749,-76.498768],
+        [-105.002312,-98.499521,-101.895726,-98.063678,-99.059141,-94.123839,-112.034292,-96.997061,-114.958862,-100.436553,-99.769229,-87.422480],
+        [-118.122682,-110.807352,-114.639703,-110.396785,-111.463209,-105.896772,-126.035367,-109.117147,-129.358058,-112.986414,-112.235707,-98.346192],
+    ]);
+    
+    for m in 0 .. known_answer.nrows() {
+        for n in 0 .. known_answer.ncols() {
+            let relative_error = {
+                if known_answer[[m, n]] == partition_function[[m, n]] {
+                    0.0
+                } else {
+                    known_answer[[m, n]] / partition_function[[m, n]] - 1.0
+                }
+            };
+            
+            assert!(relative_error < significance, "[m,n] = [{}, {}]. error = {:.2}% > {:.2}%", m, n, relative_error*100.0, significance*100.0);
+        }
+    }
+}
 
 /// Calculates the Hurst-Holder exponent for a fractal series.
-fn calc_holder(partition_function: &Array2<f32>, moments: &Array1<f32>, factors: &[usize]) -> Result<f32, Box<dyn Error>> {
-    let ln_factors: Vec<f32> = factors.iter().map(|f| f32::value_from(*f).unwrap().ln() ).collect();
-    let mut scaling_function: Array2<f32> = Array2::zeros((moments.shape()[0], 2));
+fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors: &[usize]) -> Result<f64, Box<dyn Error>> {
+    let ln_factors: Vec<f64> = factors.iter().map(|f| f64::value_from(*f).unwrap().ln() ).collect();
+    let mut scaling_function: Array2<f64> = Array2::zeros((moments.shape()[0], 2));
 
-    let (mut last_q, mut last_slope): (Option<f32>, Option<f32>) = (None, None);
-    let mut holder: Option<f32> = None;
+    let (mut last_q, mut last_slope): (Option<f64>, Option<f64>) = (None, None);
+    let mut holder: Option<f64> = None;
 
     for (m, q) in moments.iter().enumerate() {
         let y = partition_function.slice(s![m, ..]).to_vec();
         //println!("y = {:?}", y);
-        let (slope, _intercept): (f32, f32) = match linear_regression(&ln_factors[..ln_factors.len()], &y) {
+        let (slope, _intercept): (f64, f64) = match linear_regression(&ln_factors[..ln_factors.len()], &y) {
             Ok((slope, _intercept)) => {
                 (slope, _intercept)
             },
@@ -229,7 +262,7 @@ fn calc_holder(partition_function: &Array2<f32>, moments: &Array1<f32>, factors:
 fn main() {
     let file = File::open(DATA_PATH).unwrap();
     let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
-    let array_read: Array2<f32> = reader.deserialize_array2_dynamic().unwrap();
+    let array_read: Array2<f64> = reader.deserialize_array2_dynamic().unwrap();
         
     let xt = compound_price(&array_read);
 
