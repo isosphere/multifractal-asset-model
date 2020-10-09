@@ -17,8 +17,6 @@ use std::{
 use conv::*;
 use csv::ReaderBuilder;
 
-use linreg::linear_regression;
-
 use ndarray::{Array, Array1, Array2, Axis, stack, s};
 use ndarray_csv::Array2Reader;
 use ndarray_glm::{Linear, ModelBuilder};
@@ -214,7 +212,7 @@ fn test_calc_partition_function() {
 }
 
 /// Calculates the Hurst-Holder exponent for a fractal series, using ndarray-glm
-fn calc_holder_glm(partition_function: &Array2<f64>, moments: &Array1<f64>, factors: &[usize]) -> Result<f64, Box<dyn Error>> {
+fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors: &[usize]) -> Result<f64, Box<dyn Error>> {
     let ln_factors: Vec<f64> = factors.iter().map(|f| f64::value_from(*f).unwrap().ln() ).collect();
     let highly_composite_number = factors.last().copied().unwrap();
 
@@ -306,7 +304,7 @@ fn main() {
 
     let partition_function = calc_partition_function(&xt, &moments, &factors);
 
-    let holder = calc_holder_glm(&partition_function, &moments, &factors).unwrap();
+    let holder = calc_holder(&partition_function, &moments, &factors).unwrap();
     println!("Full-series holder exponent: {:.2}", holder);
 
     //holder_stability(&factors, &partition_function, &moments);
