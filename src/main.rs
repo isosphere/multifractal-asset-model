@@ -25,7 +25,7 @@ use ndarray_csv::Array2Reader;
 use num::{One, Zero};
 
 /// Path to asset price data
-const DATA_PATH: &str = "D:\\SPX_since_1950-01-03_inclusive.csv";
+const DATA_PATH: &str = "D:\\Bitfinex_BTCUSD_1h_since_2017-10-09-0900.csv";
 
 #[derive(Debug)]
 struct AnalysisFailure(String);
@@ -259,6 +259,17 @@ fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors:
     }
 }
 
+/// A function to determine the hurst-holder exponent for a fractal series for different depths of data.
+/// If the result is volatile and shows no stability, it may imply this analysis approach is invalid for the series.
+fn holder_stability(factors: &[usize], partition_function: &Array2<f64>, moments: &Array1<f64>) {
+    for i in 0 .. factors.len() - 1 {
+        let max_index = factors.len() - i;
+
+        let holder = calc_holder(&partition_function.slice(s![.., 0..max_index]).to_owned(), &moments, &factors[..max_index]).unwrap();
+        println!("{},{:.4}", factors[max_index-1], holder)
+    }
+}
+
 fn main() {
     let file = File::open(DATA_PATH).unwrap();
     let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
@@ -287,10 +298,5 @@ fn main() {
 
     let partition_function = calc_partition_function(&xt, &moments, &factors);
 
-    for i in 0 .. factors.len() - 1 {
-        let max_index = factors.len() - i;
-
-        let holder = calc_holder(&partition_function.slice(s![.., 0..max_index]).to_owned(), &moments, &factors[..max_index]).unwrap();
-        println!("{},{:.4}", factors[max_index-1], holder)
-    }
+    holder_stability(&factors, &partition_function, &moments);
 }
