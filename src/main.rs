@@ -19,13 +19,14 @@ use csv::ReaderBuilder;
 
 use linreg::linear_regression;
 
-use ndarray::{Array, Array1, arr1, Array2, arr2, Axis, stack, s};
+use ndarray::{Array, Array1, Array2, Axis, stack, s};
 use ndarray_csv::Array2Reader;
+use ndarray_glm::{Linear, ModelBuilder};
 
 use num::{One, Zero};
 
 /// Path to asset price data
-const DATA_PATH: &str = "D:\\Bitfinex_BTCUSD_1h_since_2017-10-09-0900.csv";
+const DATA_PATH: &str = "D:\\SPX_since_1950-01-03_inclusive.csv";
 
 #[derive(Debug)]
 struct AnalysisFailure(String);
@@ -95,6 +96,8 @@ fn compound_price(array_read: &Array2<f64>) -> Array1<f64> {
 
 #[test]
 fn test_compound_price() {
+    use ndarray::{arr1, arr2};
+
     let test_array = arr2(&[
         [0.00,16.66],
         [1.00,16.85],
@@ -158,6 +161,8 @@ fn calc_partition_function(xt: &Array1<f64>, moments: &Array1<f64>, factors: &[u
 
 #[test]
 fn test_calc_partition_function() {
+    use ndarray::{arr1, arr2};
+
     let significance = 0.001; // relative error that is acceptable
 
     let moments = Array::linspace(0.01, 30.0, 10);
@@ -200,11 +205,7 @@ fn test_calc_partition_function() {
     for m in 0 .. known_answer.nrows() {
         for n in 0 .. known_answer.ncols() {
             let relative_error = {
-                if known_answer[[m, n]] == partition_function[[m, n]] {
-                    0.0
-                } else {
-                    known_answer[[m, n]] / partition_function[[m, n]] - 1.0
-                }
+                known_answer[[m, n]] / partition_function[[m, n]] - 1.0
             };
             
             assert!(relative_error < significance, "[m,n] = [{}, {}]. error = {:.2}% > {:.2}%", m, n, relative_error*100.0, significance*100.0);
@@ -212,41 +213,48 @@ fn test_calc_partition_function() {
     }
 }
 
-/// Calculates the Hurst-Holder exponent for a fractal series.
-fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors: &[usize]) -> Result<f64, Box<dyn Error>> {
+/// Calculates the Hurst-Holder exponent for a fractal series, using ndarray-glm
+fn calc_holder_glm(partition_function: &Array2<f64>, moments: &Array1<f64>, factors: &[usize]) -> Result<f64, Box<dyn Error>> {
     let ln_factors: Vec<f64> = factors.iter().map(|f| f64::value_from(*f).unwrap().ln() ).collect();
+    let highly_composite_number = factors.last().copied().unwrap();
+
     let mut scaling_function: Array2<f64> = Array2::zeros((moments.shape()[0], 2));
 
     let (mut last_q, mut last_slope): (Option<f64>, Option<f64>) = (None, None);
     let mut holder: Option<f64> = None;
 
     for (m, q) in moments.iter().enumerate() {
-        let y = partition_function.slice(s![m, ..]).to_vec();
-        //println!("y = {:?}", y);
-        let (slope, _intercept): (f64, f64) = match linear_regression(&ln_factors[..ln_factors.len()], &y) {
-            Ok((slope, _intercept)) => {
-                (slope, _intercept)
-            },
-            Err(e) => {
-                println!("q = {}, slope error: '{}'. breaking from loop", q, e);
-                break;
-            }
+        let y = partition_function.slice(s![m, ..]);
+        let mut x = Array2::from_elem((y.shape()[0], 2), 0.0);
+        
+        for (m, factor) in ln_factors.iter().enumerate() {
+            x[[m, 0]] = *factor;
+            x[[m, 1]] = highly_composite_number.value_as::<f64>().unwrap().ln()
+        }
+        
+        let model = ModelBuilder::<Linear>::data(y, x.view()).no_constant().build().unwrap();
+        let fit = model.fit().unwrap();
+
+        let (tau_q, _c_q) = {
+            let result = model.fit().unwrap().result.to_vec();
+            (result[0], result[1])
         };
+
         scaling_function[[m, 0]] = *q;
-        scaling_function[[m, 1]] = slope;
+        scaling_function[[m, 1]] = tau_q;
         
         // interpolate zero crossover
         match (holder, last_q, last_slope) {
             (None, Some(last_q), Some(last_slope)) => {
-                if last_slope < 0.0 && slope >= 0.0 {
-                    holder = Some(1.0/((-last_slope*(*q - last_q)/(slope-last_slope))+last_q));
+                if last_slope < 0.0 && tau_q >= 0.0 {
+                    holder = Some(1.0/((-last_slope*(*q - last_q)/(tau_q-last_slope))+last_q));
                 }
             }
             (_, _, _) => {}
         }
 
         last_q = Some(*q);
-        last_slope = Some(slope);
+        last_slope = Some(tau_q);
     }
 
     match holder {
@@ -294,9 +302,12 @@ fn main() {
     }
 
     println!("There are {} factors of our highly composite number ({}), and we have {} moments (q) to compute with.", factors.len(), highly_composite_number, moments.shape()[0]);
-    println!("We are ignoring {} data points ({:.2}% of series) due to our insistence on a highly composite number.", data_size - highly_composite_number, 1 - highly_composite_number/data_size*100);
+    println!("We are ignoring {} data points ({:.2}% of the series) due to our insistence on a highly composite number.", data_size - highly_composite_number, 1 - highly_composite_number/data_size*100);
 
     let partition_function = calc_partition_function(&xt, &moments, &factors);
 
-    holder_stability(&factors, &partition_function, &moments);
+    let holder = calc_holder_glm(&partition_function, &moments, &factors).unwrap();
+    println!("Full-series holder exponent: {:.2}", holder);
+
+    //holder_stability(&factors, &partition_function, &moments);
 }

@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 csv = "1.1"
 conv = "0.3.3"
-linreg = "0.2.0"
-ndarray = "0.13"
+ndarray = { version = "0.13"}
 ndarray-csv = "0.4"
+ndarray-glm = { version = "0.0.7", features = ["intel-mkl"]}
 num = "0.3"
