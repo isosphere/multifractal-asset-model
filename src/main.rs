@@ -222,7 +222,7 @@ fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors:
     let mut holder: Option<f64> = None;
 
     for (m, q) in moments.iter().enumerate() {
-        let y = partition_function.slice(s![m, ..]);
+        let y = partition_function.slice(s![m, ..]).to_owned() / partition_function[[m, 0]];
         let mut x = Array2::from_elem((y.shape()[0], 2), 0.0);
         
         for (m, factor) in ln_factors.iter().enumerate() {
@@ -230,8 +230,7 @@ fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors:
             x[[m, 1]] = highly_composite_number.value_as::<f64>().unwrap().ln()
         }
         
-        let model = ModelBuilder::<Linear>::data(y, x.view()).no_constant().build().unwrap();
-        let fit = model.fit().unwrap();
+        let model = ModelBuilder::<Linear>::data(y.view(), x.view()).no_constant().build().unwrap();
 
         let (tau_q, _c_q) = {
             let result = model.fit().unwrap().result.to_vec();
