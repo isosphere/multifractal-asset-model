@@ -18,15 +18,16 @@ use conv::*;
 use csv::ReaderBuilder;
 
 use itertools_num::ItertoolsNum;
-
+use indicatif::ProgressIterator;
 use ndarray::{Array, Array1, Array2, Axis, stack, s};
 use ndarray_csv::Array2Reader;
 use ndarray_glm::{Linear, ModelBuilder};
-
+use probability::source;
 use num::{One, Zero};
-use rand::thread_rng;
+
 use rand_distr::{LogNormal, Distribution};
 use roots::{find_root_secant, SimpleConvergency};
+use stochastic::gaussian::fractional::Motion;
 
 /// Path to asset price data
 const DATA_PATH: &str = "D:\\SPX_since_1950-01-03_inclusive.csv";
@@ -288,6 +289,7 @@ fn holder_stability(factors: &[usize], partition_function: &Array2<f64>, moments
     }
 }
 
+/// Estimate the fractal spectrum given the taq(q) matrix. Returns the required parameters for the MMAR simulation.
 fn calc_spectrum(tau_q: &Array2<f64>) -> Result<(Array2<f64>, f64, f64), Box<dyn Error>> {
     let mut max_q = None;
 
@@ -342,6 +344,7 @@ fn calc_spectrum(tau_q: &Array2<f64>) -> Result<(Array2<f64>, f64, f64), Box<dyn
     Ok((result, lambda, sigma))
 }
 
+/// Recursive function that generates a lognormal multiplicative cascade to be used as "trading time"
 fn lognormal_cascade(k: &i32, mut cascade: Vec<f64>, ln_lambda: &f64, ln_theta: &f64) -> Vec<f64> {
     let mut k = *k;
 
@@ -361,7 +364,6 @@ fn lognormal_cascade(k: &i32, mut cascade: Vec<f64>, ln_lambda: &f64, ln_theta: 
 
     cascade
 }
-
 
 fn main() {
     let file = File::open(DATA_PATH).unwrap();
@@ -398,10 +400,36 @@ fn main() {
 
     let (_f_a, ln_lambda, ln_theta) = calc_spectrum(&tau_q).unwrap();
 
+    let mut all_simulations: Vec<Vec<f64>> = Vec::new();
+
+    for _ in (0 .. 10000).progress() {
+        all_simulations.push(mmar_simulation(k, &holder, &ln_lambda, &ln_theta));
+    }
+
+    {
+        use csv::WriterBuilder;
+
+        let file = File::create("output.csv").unwrap();
+        let mut writer = WriterBuilder::new().has_headers(false).from_writer(file);
+        writer.serialize(&all_simulations).unwrap();
+    }    
+}
+
+/// Simulates a multifractal model of asset returns using a combination of fractional brownian motion
+/// and a lognormal cascade of trading time to generate a multifractal series that matches the characteristics
+/// specified.
+fn mmar_simulation(k: i32, holder: &f64, ln_lambda: &f64, ln_theta: &f64) -> Vec<f64> {
     let mut cascade = vec![1.0, 1.0];
     cascade = lognormal_cascade(&k, cascade, &ln_lambda, &ln_theta);
     cascade = cascade.iter().cumsum::<f64>().map(|i| i*2.0f64.powi(k)/cascade.iter().sum::<f64>()).collect(); // normalized trading time
 
+    let fbm = Motion::new(*holder);
+    let magnitude: f64 = 0.15;
+    let samples: usize = 10*2usize.pow(k.value_as::<u32>().unwrap()) + 1usize;
+    let mut source = source::default();
+    let sampled_fbm = fbm.sample(samples, magnitude, &mut source);
 
-    //holder_stability(&factors, &partition_function, &moments);
+    let simulated_xt: Vec<f64> = (0 .. cascade.len()).map(|i| sampled_fbm[ (cascade[i] * 10.0) as usize]).collect();
+
+    simulated_xt
 }
