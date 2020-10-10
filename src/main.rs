@@ -17,11 +17,15 @@ use std::{
 use conv::*;
 use csv::ReaderBuilder;
 
+use itertools_num::ItertoolsNum;
+
 use ndarray::{Array, Array1, Array2, Axis, stack, s};
 use ndarray_csv::Array2Reader;
 use ndarray_glm::{Linear, ModelBuilder};
 
 use num::{One, Zero};
+use rand::thread_rng;
+use rand_distr::{LogNormal, Distribution};
 use roots::{find_root_secant, SimpleConvergency};
 
 /// Path to asset price data
@@ -284,7 +288,7 @@ fn holder_stability(factors: &[usize], partition_function: &Array2<f64>, moments
     }
 }
 
-fn calc_spectrum(tau_q: &Array2<f64>) -> Result<Array2<f64>, Box<dyn Error>> {
+fn calc_spectrum(tau_q: &Array2<f64>) -> Result<(Array2<f64>, f64, f64), Box<dyn Error>> {
     let mut max_q = None;
 
     for (m, q) in tau_q.slice(s![.., 0]).iter().enumerate() {
@@ -335,8 +339,29 @@ fn calc_spectrum(tau_q: &Array2<f64>) -> Result<Array2<f64>, Box<dyn Error>> {
     println!("lambda = {:.2} sigma^2 = {:.2} (assuming we partition our cascade in two at each step)", lambda, sigma);
 
 
-    Ok(result)
+    Ok((result, lambda, sigma))
 }
+
+fn lognormal_cascade(k: &i32, mut cascade: Vec<f64>, ln_lambda: &f64, ln_theta: &f64) -> Vec<f64> {
+    let mut k = *k;
+
+    k -= 1;
+
+    let log_normal = LogNormal::new(*ln_lambda, *ln_theta).unwrap();
+    let mass_left = log_normal.sample(&mut rand::thread_rng());
+    let mass_right = log_normal.sample(&mut rand::thread_rng());
+
+    if k > 0 {
+        let left_side  = lognormal_cascade(&k, cascade.to_owned().into_iter().map(|v| v*mass_left).collect(), &ln_lambda, &ln_theta);
+        let mut right_side = lognormal_cascade(&k, cascade.to_owned().into_iter().map(|v| v*mass_right).collect(), &ln_lambda, &ln_theta);
+
+        cascade = left_side;
+        cascade.append(&mut right_side);
+    }
+
+    cascade
+}
+
 
 fn main() {
     let file = File::open(DATA_PATH).unwrap();
@@ -369,7 +394,14 @@ fn main() {
     let (holder, tau_q) = calc_holder(&partition_function, &moments, &factors).unwrap();
     println!("Full-series holder exponent: {:.2}", holder);
 
-    let f_a = calc_spectrum(&tau_q);
+    let k: i32 = 13;
+
+    let (_f_a, ln_lambda, ln_theta) = calc_spectrum(&tau_q).unwrap();
+
+    let mut cascade = vec![1.0, 1.0];
+    cascade = lognormal_cascade(&k, cascade, &ln_lambda, &ln_theta);
+    cascade = cascade.iter().cumsum::<f64>().map(|i| i*2.0f64.powi(k)/cascade.iter().sum::<f64>()).collect(); // normalized trading time
+
 
     //holder_stability(&factors, &partition_function, &moments);
 }

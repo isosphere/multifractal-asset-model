@@ -9,8 +9,11 @@ edition = "2018"
 [dependencies]
 csv = "1.1"
 conv = "0.3.3"
+itertools-num = "0.1.3"
 ndarray = { version = "0.13"}
 ndarray-csv = "0.4"
 ndarray-glm = { version = "0.0.7", features = ["intel-mkl"]}
 num = "0.3"
+rand = "0.7.3"
+rand_distr = "0.3.0"
 roots = "0.0.6"
