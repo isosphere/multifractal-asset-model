@@ -15,14 +15,14 @@ use std::{
 };
 
 use conv::*;
-use csv::{ReaderBuilder, WriterBuilder};
+use csv::ReaderBuilder;
 
 use ndarray::{Array, Array1, Array2, Axis, stack, s};
-use ndarray_csv::{Array2Reader, Array2Writer};
+use ndarray_csv::Array2Reader;
 use ndarray_glm::{Linear, ModelBuilder};
 
 use num::{One, Zero};
-use roots::{find_root_inverse_quadratic, SimpleConvergency};
+use roots::{find_root_secant, SimpleConvergency};
 
 /// Path to asset price data
 const DATA_PATH: &str = "D:\\SPX_since_1950-01-03_inclusive.csv";
@@ -256,6 +256,8 @@ fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors:
     }
 
     // {
+    //     use csv::WriterBuilder;
+    //     use ndarray_csv::Array2Writer;
     //     let file = File::create("output.csv")?;
     //     let mut writer = WriterBuilder::new().has_headers(false).from_writer(file);
     //     writer.serialize_array2(&scaling_function)?;
@@ -321,7 +323,7 @@ fn calc_spectrum(tau_q: &Array2<f64>) -> Result<Array2<f64>, Box<dyn Error>> {
 
     let f = |x: f64| q_squared*x.powi(2) + q*x + intercept;
     let mut convergency = SimpleConvergency{ eps: 1e-15f64, max_iter: 30 };
-    let root_1 = find_root_inverse_quadratic(0.0f64, 4.0f64, &f, &mut convergency).unwrap();
+    let root_1 = find_root_secant(0.0f64, 4.0f64, &f, &mut convergency).unwrap();
 
     let h_estimate = 1.0/root_1;
     let alpha_zero = result[[0, 0]];
