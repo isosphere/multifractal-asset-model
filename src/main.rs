@@ -18,14 +18,17 @@ use conv::*;
 use csv::ReaderBuilder;
 
 use itertools_num::ItertoolsNum;
-use indicatif::ProgressIterator;
+use indicatif::ParallelProgressIterator;
 use ndarray::{Array, Array1, Array2, Axis, stack, s};
 use ndarray_csv::Array2Reader;
 use ndarray_glm::{Linear, ModelBuilder};
+use plotters::prelude::*;
 use probability::source;
 use num::{One, Zero};
-
+use rand::prelude::*;
+use rand::rngs::ThreadRng;
 use rand_distr::{LogNormal, Distribution};
+use rayon::prelude::*;
 use roots::{find_root_secant, SimpleConvergency};
 use stochastic::gaussian::fractional::Motion;
 
@@ -345,18 +348,18 @@ fn calc_spectrum(tau_q: &Array2<f64>) -> Result<(Array2<f64>, f64, f64), Box<dyn
 }
 
 /// Recursive function that generates a lognormal multiplicative cascade to be used as "trading time"
-fn lognormal_cascade(k: &i32, mut cascade: Vec<f64>, ln_lambda: &f64, ln_theta: &f64) -> Vec<f64> {
+fn lognormal_cascade(k: &i32, mut cascade: Vec<f64>, ln_lambda: &f64, ln_theta: &f64, rng: &mut ThreadRng) -> Vec<f64> {
     let mut k = *k;
 
     k -= 1;
 
     let log_normal = LogNormal::new(*ln_lambda, *ln_theta).unwrap();
-    let mass_left = log_normal.sample(&mut rand::thread_rng());
-    let mass_right = log_normal.sample(&mut rand::thread_rng());
+    let mass_left = log_normal.sample(rng);
+    let mass_right = log_normal.sample(rng);
 
     if k > 0 {
-        let left_side  = lognormal_cascade(&k, cascade.to_owned().into_iter().map(|v| v*mass_left).collect(), &ln_lambda, &ln_theta);
-        let mut right_side = lognormal_cascade(&k, cascade.to_owned().into_iter().map(|v| v*mass_right).collect(), &ln_lambda, &ln_theta);
+        let left_side  = lognormal_cascade(&k, cascade.to_owned().into_iter().map(|v| v*mass_left).collect(), &ln_lambda, &ln_theta, rng);
+        let mut right_side = lognormal_cascade(&k, cascade.to_owned().into_iter().map(|v| v*mass_right).collect(), &ln_lambda, &ln_theta, rng);
 
         cascade = left_side;
         cascade.append(&mut right_side);
@@ -364,6 +367,39 @@ fn lognormal_cascade(k: &i32, mut cascade: Vec<f64>, ln_lambda: &f64, ln_theta: 
 
     cascade
 }
+
+/*fn plot_simulation(all_simulations: &Vec<Vec<f64>>, k: i32) -> Result<(), Box<dyn std::error::Error>> {
+    let root = BitMapBackend::new("0.png", (640, 480)).into_drawing_area();
+    root.fill(&WHITE)?;
+
+    let max = (10*2usize.pow(k.value_as::<u32>().unwrap()) + 1usize).value_as::<f64>().unwrap();
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption("MMAR Simulations", ("sans-serif", 50).into_font())
+        .margin(5)
+        .x_label_area_size(30)
+        .y_label_area_size(30)
+        .build_ranged(0.0f64 .. max, 0..1f32)?;
+
+    chart.configure_mesh().draw()?;
+
+    chart
+        .draw_series(LineSeries::new(
+            (-50..=50).map(|x| x as f32 / 50.0).map(|x| (x, x * x)),
+            &RED,
+        ))?
+        .label("y = x^2")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+
+    chart
+        .configure_series_labels()
+        .background_style(&WHITE.mix(0.8))
+        .border_style(&BLACK)
+        .draw()?;
+
+
+    Ok(())
+}*/
 
 fn main() {
     let file = File::open(DATA_PATH).unwrap();
@@ -400,19 +436,30 @@ fn main() {
 
     let (_f_a, ln_lambda, ln_theta) = calc_spectrum(&tau_q).unwrap();
 
-    let mut all_simulations: Vec<Vec<f64>> = Vec::new();
+    let iterations: usize = 5;
 
-    for _ in (0 .. 10000).progress() {
-        all_simulations.push(mmar_simulation(k, &holder, &ln_lambda, &ln_theta));
-    }
+    let all_simulations: Vec<Vec<f64>> = (0..iterations).into_par_iter()
+                                                        .progress_count(iterations.value_as::<u64>().unwrap())
+                                                        .map(|_i| mmar_simulation(k, &holder, &ln_lambda, &ln_theta)).collect();
+    
+    let mut sorted_final_positions: Vec<f64> = all_simulations.iter().map(|v| v.last().unwrap().to_owned()).collect::<Vec<f64>>();
+    sorted_final_positions.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+    println!("{:?}", sorted_final_positions);
+    println!("{} {}", all_simulations[0].last().unwrap(), all_simulations[4].last().unwrap());
 
-    {
-        use csv::WriterBuilder;
+    println!("len = {}", sorted_final_positions.len());
+    let (min, max) = (sorted_final_positions.first().unwrap(), sorted_final_positions.last().unwrap());
+    println!("(final positions) min = {:.2} max = {:.2}", min, max);
 
-        let file = File::create("output.csv").unwrap();
-        let mut writer = WriterBuilder::new().has_headers(false).from_writer(file);
-        writer.serialize(&all_simulations).unwrap();
-    }    
+    //plot_simulation(&all_simulations, k);
+
+    // {
+    //     use csv::WriterBuilder;
+
+    //     let file = File::create("output.csv").unwrap();
+    //     let mut writer = WriterBuilder::new().has_headers(false).from_writer(file);
+    //     writer.serialize(&all_simulations).unwrap();
+    // }
 }
 
 /// Simulates a multifractal model of asset returns using a combination of fractional brownian motion
@@ -420,13 +467,17 @@ fn main() {
 /// specified.
 fn mmar_simulation(k: i32, holder: &f64, ln_lambda: &f64, ln_theta: &f64) -> Vec<f64> {
     let mut cascade = vec![1.0, 1.0];
-    cascade = lognormal_cascade(&k, cascade, &ln_lambda, &ln_theta);
+    let mut rng = rand::thread_rng();
+
+    cascade = lognormal_cascade(&k, cascade, &ln_lambda, &ln_theta, &mut rng);
     cascade = cascade.iter().cumsum::<f64>().map(|i| i*2.0f64.powi(k)/cascade.iter().sum::<f64>()).collect(); // normalized trading time
 
     let fbm = Motion::new(*holder);
     let magnitude: f64 = 0.15;
     let samples: usize = 10*2usize.pow(k.value_as::<u32>().unwrap()) + 1usize;
-    let mut source = source::default();
+    
+    let mut source = source::default().seed([rng.gen::<u64>(), rng.gen::<u64>()]);
+
     let sampled_fbm = fbm.sample(samples, magnitude, &mut source);
 
     let simulated_xt: Vec<f64> = (0 .. cascade.len()).map(|i| sampled_fbm[ (cascade[i] * 10.0) as usize]).collect();
