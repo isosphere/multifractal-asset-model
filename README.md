@@ -3,4 +3,6 @@ A multifractal model of asset returns, inspired by the 1997 paper by Mandelbrot,
 
 I have found this model very challenging to understand and implement from the texts available, hopefully this code helps others that are similarily inclined.
 
+Currently requires my own fork of the czt package due to an incompatibility with current rust versions.
+
 Code was written with https://github.com/Deckstar/Multifractal-Model-of-Asset-Returns-MMAR-for-Thesis as a closely studied reference to keep parity with output. 
