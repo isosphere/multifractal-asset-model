@@ -132,7 +132,8 @@ fn test_compound_price() {
 
     let significance = 1e4;
     for (m, ans) in xt.iter().enumerate() {
-        assert_eq!((significance*ans).round(), (significance*known_answer[m]).round())
+        let error = (ans / (known_answer[m]+1e-60) - 1.0).abs();
+        assert!(error < significance, "error {} > {} ", error, significance);
     }
 }
 
@@ -212,8 +213,7 @@ fn test_calc_partition_function() {
 }
 
 /// Calculates the Hurst-Holder exponent for a fractal series, using ndarray-glm
-fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors: &[usize]) -> Result<f64, Box<dyn Error>> {
-    let ln_factors: Vec<f64> = factors.iter().map(|f| f64::value_from(*f).unwrap().ln() ).collect();
+fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors: &[usize]) -> Result<(f64, Array2<f64>), Box<dyn Error>> {
     let highly_composite_number = factors.last().copied().unwrap();
 
     let mut scaling_function: Array2<f64> = Array2::zeros((moments.shape()[0], 2));
@@ -225,9 +225,8 @@ fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors:
         let y = (partition_function.slice(s![m, ..]).to_owned() / partition_function[[m, 0]]).map(|p| p.ln());
 
         let mut x = Array2::from_elem((y.shape()[0], 2), 0.0);
-        
-        for (m, factor) in ln_factors.iter().enumerate() {
-            x[[m, 0]] = *factor;
+        for (m, factor) in factors.iter().enumerate() {
+            x[[m, 0]] = (*factor).value_as::<f64>().unwrap().ln();
             x[[m, 1]] = highly_composite_number.value_as::<f64>().unwrap().ln()
         }
         
@@ -255,15 +254,15 @@ fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors:
         last_slope = Some(tau_q);
     }
 
-    {
-        let file = File::create("output.csv")?;
-        let mut writer = WriterBuilder::new().has_headers(false).from_writer(file);
-        writer.serialize_array2(&scaling_function)?;
-    }
+    // {
+    //     let file = File::create("output.csv")?;
+    //     let mut writer = WriterBuilder::new().has_headers(false).from_writer(file);
+    //     writer.serialize_array2(&scaling_function)?;
+    // }
 
     match holder {
         Some(h) => {
-            Ok(h)
+            Ok((h, scaling_function))
         },
         None => {
             Err(Box::new(AnalysisFailure("Unable to determine Hurst expontent. Consider adding more Q's near the beginning of the series?".into())))
@@ -277,9 +276,49 @@ fn holder_stability(factors: &[usize], partition_function: &Array2<f64>, moments
     for i in 0 .. factors.len() - 1 {
         let max_index = factors.len() - i;
 
-        let holder = calc_holder(&partition_function.slice(s![.., 0..max_index]).to_owned(), &moments, &factors[..max_index]).unwrap();
+        let (holder, _) = calc_holder(&partition_function.slice(s![.., 0..max_index]).to_owned(), &moments, &factors[..max_index]).unwrap();
         println!("{},{:.4}", factors[max_index-1], holder)
     }
+}
+
+fn calc_spectrum(tau_q: &Array2<f64>) -> Result<Array2<f64>, Box<dyn Error>> {
+    let mut max_q = None;
+
+    for (m, q) in tau_q.slice(s![.., 0]).iter().enumerate() {
+        if *q >= 8.0 {
+            max_q = Some(m);
+            break;
+        }
+    }
+
+    assert!(max_q.is_some());
+
+    let y = tau_q.slice(s![..max_q.unwrap(), 1]).to_owned();
+    let total_qs = y.shape()[0];
+
+    let mut x: Array2<f64> = Array2::zeros((total_qs, 2));
+    for (m, q) in tau_q.slice(s![..max_q.unwrap(), 0]).iter().enumerate() {
+        x[[m, 0]] = q.powi(2);
+        x[[m, 1]] = *q;
+    }
+
+    let model = ModelBuilder::<Linear>::data(y.view(), x.view()).build().unwrap();
+
+    let (intercept, q_squared, q) = {
+        let result = model.fit().unwrap().result.to_vec();
+        (result[0], result[1], result[2])
+    };
+
+    let p = |i| {2.0*q_squared*tau_q[[i, 0]]+q};
+    let f_a: Vec<f64> = (0 .. total_qs).map(|i| ((p(i)-q)/(2.0*q_squared))*p(i) - (q_squared*((p(i)-q)/(2.0*q_squared)).powi(2) + q*((p(i)-q)/(2.0*q_squared)) + intercept)).collect();
+
+    let mut result: Array2<f64> = Array2::zeros((total_qs, 2));
+    for m in 0 .. total_qs {
+        result[[m, 0]] = p(m); // hurst-holder
+        result[[m, 1]] = f_a[m];
+    }
+
+    Ok(result)
 }
 
 fn main() {
@@ -292,8 +331,8 @@ fn main() {
     // We expect the zero crossover to occur somewhere around 2.0, so we use more points around there.
     let moments = stack![
         Axis(0),
-        Array::linspace(0.01, 0.1, 30), Array::linspace(0.11, 0.5, 30), Array::linspace(0.51, 1.5, 30),
-        Array::linspace(1.51, 2.5, 120), Array::linspace(2.51, 6.0, 30), Array::linspace(6.1, 30.0, 20)
+        Array::linspace(0.01, 0.1, 30), Array::linspace(0.11, 0.5, 30), Array::linspace(0.51, 1.24, 30),
+        Array::linspace(1.25, 2.5, 160), Array::linspace(2.51, 6.0, 30), Array::linspace(6.1, 30.0, 20)
     ];
 
     let data_size = xt.shape()[0];
@@ -310,8 +349,10 @@ fn main() {
 
     let partition_function = calc_partition_function(&xt, &moments, &factors);
 
-    let holder = calc_holder(&partition_function, &moments, &factors).unwrap();
+    let (holder, tau_q) = calc_holder(&partition_function, &moments, &factors).unwrap();
     println!("Full-series holder exponent: {:.2}", holder);
+
+    calc_spectrum(&tau_q);
 
     //holder_stability(&factors, &partition_function, &moments);
 }
