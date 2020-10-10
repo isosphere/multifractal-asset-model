@@ -477,6 +477,7 @@ dependencies = [
  "ndarray-csv",
  "ndarray-glm",
  "num",
+ "roots",
 ]
 
 [[package]]
@@ -732,6 +733,12 @@ checksum = "ae1ded71d66a4a97f5e961fd0cb25a5f366a42a41570d16a763a69c092c26ae4"
 dependencies = [
  "byteorder",
 ]
+
+[[package]]
+name = "roots"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84348444bd7ad45729d0c49a4240d7cdc11c9d512c06c5ad1835c1ad4acda6db"
 
 [[package]]
 name = "rust-argon2"

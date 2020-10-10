@@ -13,3 +13,4 @@ ndarray = { version = "0.13"}
 ndarray-csv = "0.4"
 ndarray-glm = { version = "0.0.7", features = ["intel-mkl"]}
 num = "0.3"
+roots = "0.0.6"

@@ -22,6 +22,7 @@ use ndarray_csv::{Array2Reader, Array2Writer};
 use ndarray_glm::{Linear, ModelBuilder};
 
 use num::{One, Zero};
+use roots::{find_root_inverse_quadratic, SimpleConvergency};
 
 /// Path to asset price data
 const DATA_PATH: &str = "D:\\SPX_since_1950-01-03_inclusive.csv";
@@ -318,6 +319,20 @@ fn calc_spectrum(tau_q: &Array2<f64>) -> Result<Array2<f64>, Box<dyn Error>> {
         result[[m, 1]] = f_a[m];
     }
 
+    let f = |x: f64| q_squared*x.powi(2) + q*x + intercept;
+    let mut convergency = SimpleConvergency{ eps: 1e-15f64, max_iter: 30 };
+    let root_1 = find_root_inverse_quadratic(0.0f64, 4.0f64, &f, &mut convergency).unwrap();
+
+    let h_estimate = 1.0/root_1;
+    let alpha_zero = result[[0, 0]];
+    let lambda = alpha_zero/h_estimate;
+    let sigma = (2.0*(lambda-1.0))/(2.0f64.ln());
+
+    println!("H estimate = {:.2}", h_estimate);
+    println!("alpha zero = {:.2}", alpha_zero);
+    println!("lambda = {:.2} sigma^2 = {:.2} (assuming we partition our cascade in two at each step)", lambda, sigma);
+
+
     Ok(result)
 }
 
@@ -352,7 +367,7 @@ fn main() {
     let (holder, tau_q) = calc_holder(&partition_function, &moments, &factors).unwrap();
     println!("Full-series holder exponent: {:.2}", holder);
 
-    calc_spectrum(&tau_q);
+    let f_a = calc_spectrum(&tau_q);
 
     //holder_stability(&factors, &partition_function, &moments);
 }
