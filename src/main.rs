@@ -14,9 +14,9 @@ use std::{
     }
 };
 
+use clap::{Arg, App};
 use conv::*;
 use csv::ReaderBuilder;
-
 use itertools_num::ItertoolsNum;
 use indicatif::ParallelProgressIterator;
 use ndarray::{Array, Array1, Array2, Axis, stack, s};
@@ -32,9 +32,6 @@ use rayon::prelude::*;
 use roots::{find_root_secant, SimpleConvergency};
 use stochastic::gaussian::fractional::Motion;
 
-/// Path to asset price data
-const DATA_PATH: &str = "D:\\SPX_since_1950-01-03_inclusive.csv";
-
 #[derive(Debug)]
 struct AnalysisFailure(String);
 
@@ -45,6 +42,46 @@ impl fmt::Display for AnalysisFailure {
 }
 
 impl Error for AnalysisFailure {}
+
+fn command_usage<'a, 'b>() -> App<'a, 'b> {
+    const DEFAULT_K: &str = "13";
+    const DEFAULT_ITERATIONS: &str = "1000";
+    const DEFAULT_FBM_MAGNITUDE: &str = "0.10";
+    const DEFAULT_OUTPUT: &str = "mmar.png";
+
+    App::new("multifractal-asset-model")
+    .author("Matthew Scheffel <matt@dataheck.com>")
+    .about("Simulates price data using an estimated multifractal spectrum of a given price series")
+    .arg(
+        Arg::with_name("input")
+            .takes_value(true)
+            .help("Location of a CSV file that contains two columns of _FLOATING POINT_ data. Index, and price, in that order. The index will be ignored. Will break if given mixed data types.")
+    )
+    .arg(
+        Arg::with_name("k")
+            .takes_value(true)
+            .default_value(DEFAULT_K)
+            .help("Determines how many days to simulate: 2^k")
+    )
+    .arg(
+        Arg::with_name("iterations")
+            .takes_value(true)
+            .default_value(DEFAULT_ITERATIONS)
+            .help("Determines how many simulated price series are generated.")
+    )
+    .arg(
+        Arg::with_name("fbm-magnitude")
+            .takes_value(true)
+            .default_value(DEFAULT_FBM_MAGNITUDE)
+            .help("The magnitude parameter for fractional brownian motion.")
+    )
+    .arg(
+        Arg::with_name("output")
+            .takes_value(true)
+            .default_value(DEFAULT_OUTPUT)
+            .help("Filename of output PNG file.")
+    )
+}
 
 /// Returns the largest highly composite number less than or equal to the given number.
 /// There is nothing clever about this algorithm, it is slow.
@@ -358,8 +395,8 @@ fn lognormal_cascade(k: &i32, mut cascade: Vec<f64>, ln_lambda: &f64, ln_theta: 
     cascade
 }
 
-fn plot_simulation(all_simulations: &[Vec<f64>], xt: &Array1<f64>) -> Result<(), Box<dyn std::error::Error>> {
-    let root = BitMapBackend::new("0.png", (640, 480)).into_drawing_area();
+fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>) -> Result<(), Box<dyn std::error::Error>> {
+    let root = BitMapBackend::new(output, (640, 480)).into_drawing_area();
     root.fill(&WHITE)?;
     
     let mut sorted_final_positions_min: Vec<f64> = all_simulations.iter().map(|v| {
@@ -428,7 +465,9 @@ fn plot_simulation(all_simulations: &[Vec<f64>], xt: &Array1<f64>) -> Result<(),
 }
 
 fn main() {
-    let file = File::open(DATA_PATH).unwrap();
+    let matches = command_usage().get_matches();
+
+    let file = File::open(matches.value_of("input").unwrap()).unwrap();
     let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
     let array_read: Array2<f64> = reader.deserialize_array2_dynamic().unwrap();
         
@@ -457,36 +496,35 @@ fn main() {
 
     let (holder, tau_q) = calc_holder(&partition_function, &moments, &factors).unwrap();
     println!("Full-series holder exponent: {:.2}", holder);
-
-    let k: i32 = 13;
-
     let (_f_a, ln_lambda, ln_theta) = calc_spectrum(&tau_q).unwrap();
 
-    let iterations: usize = 1000;
+    let k: i32 = matches.value_of("k").unwrap().parse::<i32>().unwrap_or_else(|_| panic!("Invalid k specified: '{}.'", matches.value_of("k").unwrap()));
+    let iterations: usize = matches.value_of("iterations").unwrap().parse::<usize>().unwrap_or_else(|_| panic!("Invalid iterations specified: '{}.'", matches.value_of("iterations").unwrap()));
+    let fbm_magnitude: f64 = matches.value_of("fbm-magnitude").unwrap().parse::<f64>().unwrap_or_else(|_| panic!("Invalid fbm magnitude specified: '{}.'", matches.value_of("fbm").unwrap()));
+    let output = matches.value_of("input").unwrap();
 
     let all_simulations: Vec<Vec<f64>> = (0..iterations).into_par_iter()
                                                         .progress_count(iterations.value_as::<u64>().unwrap())
-                                                        .map(|_i| mmar_simulation(k, &holder, &ln_lambda, &ln_theta)).collect();
+                                                        .map(|_i| mmar_simulation(k, &holder, &ln_lambda, &ln_theta, &fbm_magnitude)).collect();
 
-    plot_simulation(&all_simulations, &xt).unwrap();
+    plot_simulation(output, &all_simulations, &xt).unwrap();
 }
 
 /// Simulates a multifractal model of asset returns using a combination of fractional brownian motion
 /// and a lognormal cascade of trading time to generate a multifractal series that matches the characteristics
 /// specified.
-fn mmar_simulation(k: i32, holder: &f64, ln_lambda: &f64, ln_theta: &f64) -> Vec<f64> {
+fn mmar_simulation(k: i32, holder: &f64, ln_lambda: &f64, ln_theta: &f64, fbm_magnitude: &f64) -> Vec<f64> {
     let mut cascade = vec![1.0, 1.0];
     let mut rng = rand::thread_rng();
 
     cascade = lognormal_cascade(&k, cascade, &ln_lambda, &ln_theta, &mut rng);
     cascade = cascade.iter().cumsum::<f64>().map(|i| i*2.0f64.powi(k)/cascade.iter().sum::<f64>()).collect(); // normalized trading time
 
-    let magnitude: f64 = 0.15;
     let samples: usize = 10*2usize.pow(k.value_as::<u32>().unwrap()) + 1usize;
     
     let fbm = Motion::new(*holder);
     let mut source = source::default().seed([rng.gen::<u64>(), rng.gen::<u64>()]);
-    let sampled_fbm = fbm.sample(samples, magnitude, &mut source);
+    let sampled_fbm = fbm.sample(samples, *fbm_magnitude, &mut source);
 
     let simulated_xt: Vec<f64> = (0 .. cascade.len()).map(|i| (sampled_fbm[ (cascade[i] * 10.0) as usize] / 100.0) ).collect();
 
