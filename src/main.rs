@@ -7,7 +7,7 @@ extern crate ndarray_csv;
 use std::{
     error::Error,
     fmt,
-    fs::File,
+    fs::OpenOptions,
     iter::Sum,
     ops::{
         Add, AddAssign, Div, RangeInclusive, Rem
@@ -54,29 +54,39 @@ fn command_usage<'a, 'b>() -> App<'a, 'b> {
     .about("Simulates price data using an estimated multifractal spectrum of a given price series")
     .arg(
         Arg::with_name("input")
+            .long("input")
             .takes_value(true)
+            .required(true)
             .help("Location of a CSV file that contains two columns of _FLOATING POINT_ data. Index, and price, in that order. The index will be ignored. Will break if given mixed data types.")
     )
     .arg(
         Arg::with_name("k")
+            .short("k")
+            .long("k")
             .takes_value(true)
             .default_value(DEFAULT_K)
             .help("Determines how many days to simulate: 2^k")
     )
     .arg(
         Arg::with_name("iterations")
+            .long("iterations")
+            .short("i")
             .takes_value(true)
             .default_value(DEFAULT_ITERATIONS)
             .help("Determines how many simulated price series are generated.")
     )
     .arg(
         Arg::with_name("fbm-magnitude")
+            .long("fbm-magnitude")
+            .short("m")
             .takes_value(true)
             .default_value(DEFAULT_FBM_MAGNITUDE)
             .help("The magnitude parameter for fractional brownian motion.")
     )
     .arg(
         Arg::with_name("output")
+            .long("output")
+            .short("o")
             .takes_value(true)
             .default_value(DEFAULT_OUTPUT)
             .help("Filename of output PNG file.")
@@ -367,7 +377,7 @@ fn calc_spectrum(tau_q: &Array2<f64>) -> Result<(Array2<f64>, f64, f64), Box<dyn
     let lambda = alpha_zero/h_estimate;
     let sigma = (2.0*(lambda-1.0))/(2.0f64.ln());
 
-    println!("H estimate = {:.2}", h_estimate);
+    println!("H estimate from multifractal spectrum fit root = {:.2}", h_estimate);
     println!("alpha zero = {:.2}", alpha_zero);
     println!("lambda = {:.2} sigma^2 = {:.2} (assuming we partition our cascade in two at each step)", lambda, sigma);
 
@@ -467,9 +477,15 @@ fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>)
 fn main() {
     let matches = command_usage().get_matches();
 
-    let file = File::open(matches.value_of("input").unwrap()).unwrap();
-    let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
-    let array_read: Array2<f64> = reader.deserialize_array2_dynamic().unwrap();
+    let array_read: Array2<f64> = {
+        let file = OpenOptions::new().read(true).write(false).create(false).open(matches.value_of("input").unwrap()).unwrap();
+        let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
+        
+        match reader.deserialize_array2_dynamic() {
+            Ok(v) => v,
+            Err(_) => {panic!("Unable to process the given input file. Please ensure it contains two columns, with headers, and each column contains only floating point numbers.")}
+        }
+    };
         
     let xt = compound_price(&array_read);
 
@@ -495,7 +511,7 @@ fn main() {
     let partition_function = calc_partition_function(&xt, &moments, &factors);
 
     let (holder, tau_q) = calc_holder(&partition_function, &moments, &factors).unwrap();
-    println!("Full-series holder exponent: {:.2}", holder);
+    println!("Full-series holder exponent estimated via linear interpolation: {:.2}", holder);
     let (_f_a, ln_lambda, ln_theta) = calc_spectrum(&tau_q).unwrap();
 
     let k: i32 = matches.value_of("k").unwrap().parse::<i32>().unwrap_or_else(|_| panic!("Invalid k specified: '{}.'", matches.value_of("k").unwrap()));
@@ -521,7 +537,6 @@ fn mmar_simulation(k: i32, holder: &f64, ln_lambda: &f64, ln_theta: &f64, fbm_ma
     cascade = cascade.iter().cumsum::<f64>().map(|i| i*2.0f64.powi(k)/cascade.iter().sum::<f64>()).collect(); // normalized trading time
 
     let samples: usize = 10*2usize.pow(k.value_as::<u32>().unwrap()) + 1usize;
-    
     let fbm = Motion::new(*holder);
     let mut source = source::default().seed([rng.gen::<u64>(), rng.gen::<u64>()]);
     let sampled_fbm = fbm.sample(samples, *fbm_magnitude, &mut source);
