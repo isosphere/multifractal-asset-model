@@ -436,6 +436,19 @@ fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>)
 
     chart.configure_mesh().draw()?;
 
+    let mut upper_quartile: Vec<f64> = Vec::new();
+    let mut lower_quartile: Vec<f64> = Vec::new();
+    let mut median: Vec<f64> = Vec::new();
+    
+    for n in 0 .. all_simulations[0].len() {
+        let column: Vec<f64> = (0 .. all_simulations.len()).map(|m| all_simulations[m][n]).collect();
+        let quartiles = Quartiles::new(&column);
+        median.push(quartiles.median());
+        // FIXME: hardcoding locations. library also is restricted to 25% and 75% percentiles.
+        upper_quartile.push(quartiles.values()[3].value_as::<f64>().unwrap());
+        lower_quartile.push(quartiles.values()[1].value_as::<f64>().unwrap());
+    }
+    
     let mut flag = true;
     for simulation in all_simulations {
         let series: Vec<(f64, f64)> = (0 .. simulation.len()).map(|i| (i.value_as::<f64>().unwrap(), simulation[i])).collect();
@@ -453,8 +466,16 @@ fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>)
                     LineSeries::new(series, &RED)
                 )?.label("simulated").legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
                 flag = false;
-            }          
+            }
         }
+    }
+
+    for stats in &[("25% quartile", lower_quartile), ("median", median), ("75% quartile", upper_quartile)] {
+        let series: Vec<(f64, f64)> = (0 .. all_simulations[0].len()).map(|i| (i.value_as::<f64>().unwrap(), stats.1[i])).collect();
+        chart
+        .draw_series(
+            LineSeries::new(series, &GREEN)
+        )?.label(stats.0).legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &GREEN));
     }
 
     {
