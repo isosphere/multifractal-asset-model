@@ -399,12 +399,25 @@ fn plot_simulation(all_simulations: &Vec<Vec<f64>>, xt: &Array1<f64>, k: i32) ->
 
     chart.configure_mesh().draw()?;
 
+    let mut flag = true;
     for simulation in all_simulations {
         let series: Vec<(f64, f64)> = (0 .. simulation.len()).map(|i| (i.value_as::<f64>().unwrap(), simulation[i])).collect();
-        chart
-            .draw_series(
-                LineSeries::new(series, &RED)
-            )?;
+        
+        match flag {
+            false => {
+                chart
+                .draw_series(
+                    LineSeries::new(series, &RED)
+                )?;
+            },
+            true => {
+                chart
+                .draw_series(
+                    LineSeries::new(series, &RED)
+                )?.label("simulated").legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+                flag = false;
+            }          
+        }
     }
 
     {
@@ -412,7 +425,7 @@ fn plot_simulation(all_simulations: &Vec<Vec<f64>>, xt: &Array1<f64>, k: i32) ->
         chart
         .draw_series(
             LineSeries::new(series, &BLACK)
-        )?;
+        )?.label("real").legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLACK));
     }
 
     chart
@@ -420,7 +433,6 @@ fn plot_simulation(all_simulations: &Vec<Vec<f64>>, xt: &Array1<f64>, k: i32) ->
         .background_style(&WHITE.mix(0.8))
         .border_style(&BLACK)
         .draw()?;
-
 
     Ok(())
 }
@@ -460,13 +472,13 @@ fn main() {
 
     let (_f_a, ln_lambda, ln_theta) = calc_spectrum(&tau_q).unwrap();
 
-    let iterations: usize = 5;
+    let iterations: usize = 1000;
 
     let all_simulations: Vec<Vec<f64>> = (0..iterations).into_par_iter()
                                                         .progress_count(iterations.value_as::<u64>().unwrap())
                                                         .map(|_i| mmar_simulation(k, &holder, &ln_lambda, &ln_theta)).collect();
 
-    plot_simulation(&all_simulations, &xt, k);
+    plot_simulation(&all_simulations, &xt, k).unwrap();
 
     // {
     //     use csv::WriterBuilder;
@@ -494,7 +506,7 @@ fn mmar_simulation(k: i32, holder: &f64, ln_lambda: &f64, ln_theta: &f64) -> Vec
     let mut source = source::default().seed([rng.gen::<u64>(), rng.gen::<u64>()]);
     let sampled_fbm = fbm.sample(samples, magnitude, &mut source);
 
-    let simulated_xt: Vec<f64> = (0 .. cascade.len()).map(|i| sampled_fbm[ (cascade[i] * 10.0) as usize]).collect();
+    let simulated_xt: Vec<f64> = (0 .. cascade.len()).map(|i| (sampled_fbm[ (cascade[i] * 10.0) as usize] / 100.0) ).collect();
 
     simulated_xt
 }
