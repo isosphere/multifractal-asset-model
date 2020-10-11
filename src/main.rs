@@ -263,14 +263,6 @@ fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors:
         last_slope = Some(tau_q);
     }
 
-    // {
-    //     use csv::WriterBuilder;
-    //     use ndarray_csv::Array2Writer;
-    //     let file = File::create("output.csv")?;
-    //     let mut writer = WriterBuilder::new().has_headers(false).from_writer(file);
-    //     writer.serialize_array2(&scaling_function)?;
-    // }
-
     match holder {
         Some(h) => {
             Ok((h, scaling_function))
@@ -282,8 +274,7 @@ fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors:
 }
 
 /// A function to determine the hurst-holder exponent for a fractal series for different depths of data.
-/// If the result is volatile and shows no stability, it may imply this analysis approach is invalid for the series.
-fn holder_stability(factors: &[usize], partition_function: &Array2<f64>, moments: &Array1<f64>) {
+fn _holder_stability(factors: &[usize], partition_function: &Array2<f64>, moments: &Array1<f64>) {
     for i in 0 .. factors.len() - 1 {
         let max_index = factors.len() - i;
 
@@ -343,7 +334,6 @@ fn calc_spectrum(tau_q: &Array2<f64>) -> Result<(Array2<f64>, f64, f64), Box<dyn
     println!("alpha zero = {:.2}", alpha_zero);
     println!("lambda = {:.2} sigma^2 = {:.2} (assuming we partition our cascade in two at each step)", lambda, sigma);
 
-
     Ok((result, lambda, sigma))
 }
 
@@ -368,7 +358,7 @@ fn lognormal_cascade(k: &i32, mut cascade: Vec<f64>, ln_lambda: &f64, ln_theta: 
     cascade
 }
 
-fn plot_simulation(all_simulations: &Vec<Vec<f64>>, xt: &Array1<f64>, k: i32) -> Result<(), Box<dyn std::error::Error>> {
+fn plot_simulation(all_simulations: &[Vec<f64>], xt: &Array1<f64>) -> Result<(), Box<dyn std::error::Error>> {
     let root = BitMapBackend::new("0.png", (640, 480)).into_drawing_area();
     root.fill(&WHITE)?;
     
@@ -478,15 +468,7 @@ fn main() {
                                                         .progress_count(iterations.value_as::<u64>().unwrap())
                                                         .map(|_i| mmar_simulation(k, &holder, &ln_lambda, &ln_theta)).collect();
 
-    plot_simulation(&all_simulations, &xt, k).unwrap();
-
-    // {
-    //     use csv::WriterBuilder;
-
-    //     let file = File::create("output.csv").unwrap();
-    //     let mut writer = WriterBuilder::new().has_headers(false).from_writer(file);
-    //     writer.serialize(&all_simulations).unwrap();
-    // }
+    plot_simulation(&all_simulations, &xt).unwrap();
 }
 
 /// Simulates a multifractal model of asset returns using a combination of fractional brownian motion
@@ -499,10 +481,10 @@ fn mmar_simulation(k: i32, holder: &f64, ln_lambda: &f64, ln_theta: &f64) -> Vec
     cascade = lognormal_cascade(&k, cascade, &ln_lambda, &ln_theta, &mut rng);
     cascade = cascade.iter().cumsum::<f64>().map(|i| i*2.0f64.powi(k)/cascade.iter().sum::<f64>()).collect(); // normalized trading time
 
-    let fbm = Motion::new(*holder);
     let magnitude: f64 = 0.15;
     let samples: usize = 10*2usize.pow(k.value_as::<u32>().unwrap()) + 1usize;
     
+    let fbm = Motion::new(*holder);
     let mut source = source::default().seed([rng.gen::<u64>(), rng.gen::<u64>()]);
     let sampled_fbm = fbm.sample(samples, magnitude, &mut source);
 
