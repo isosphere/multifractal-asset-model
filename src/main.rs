@@ -368,28 +368,52 @@ fn lognormal_cascade(k: &i32, mut cascade: Vec<f64>, ln_lambda: &f64, ln_theta: 
     cascade
 }
 
-/*fn plot_simulation(all_simulations: &Vec<Vec<f64>>, k: i32) -> Result<(), Box<dyn std::error::Error>> {
+fn plot_simulation(all_simulations: &Vec<Vec<f64>>, xt: &Array1<f64>, k: i32) -> Result<(), Box<dyn std::error::Error>> {
     let root = BitMapBackend::new("0.png", (640, 480)).into_drawing_area();
     root.fill(&WHITE)?;
+    
+    let mut sorted_final_positions_min: Vec<f64> = all_simulations.iter().map(|v| {
+        let mut v_sorted: Vec<f64> = v.to_owned();
+        v_sorted.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        *v_sorted.first().unwrap()
+    }).collect::<Vec<f64>>();
+    sorted_final_positions_min.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
 
-    let max = (10*2usize.pow(k.value_as::<u32>().unwrap()) + 1usize).value_as::<f64>().unwrap();
+    let mut sorted_final_positions_max: Vec<f64> = all_simulations.iter().map(|v| {
+        let mut v_sorted: Vec<f64> = v.to_owned();
+        v_sorted.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        *v_sorted.last().unwrap()
+    }).collect::<Vec<f64>>();
+    sorted_final_positions_max.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+
+    let (min_y, max_y) = (sorted_final_positions_min.first().unwrap()*1.10, sorted_final_positions_max.last().unwrap()*1.10);
+
+    let max_x = all_simulations[0].len().value_as::<f64>().unwrap()*1.10;
 
     let mut chart = ChartBuilder::on(&root)
         .caption("MMAR Simulations", ("sans-serif", 50).into_font())
         .margin(5)
-        .x_label_area_size(30)
-        .y_label_area_size(30)
-        .build_ranged(0.0f64 .. max, 0..1f32)?;
+        .x_label_area_size(40)
+        .y_label_area_size(40)
+        .build_cartesian_2d(0.0f64 .. max_x, min_y..max_y)?;
 
     chart.configure_mesh().draw()?;
 
-    chart
-        .draw_series(LineSeries::new(
-            (-50..=50).map(|x| x as f32 / 50.0).map(|x| (x, x * x)),
-            &RED,
-        ))?
-        .label("y = x^2")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+    for simulation in all_simulations {
+        let series: Vec<(f64, f64)> = (0 .. simulation.len()).map(|i| (i.value_as::<f64>().unwrap(), simulation[i])).collect();
+        chart
+            .draw_series(
+                LineSeries::new(series, &RED)
+            )?;
+    }
+
+    {
+        let series: Vec<(f64, f64)> = (0 .. all_simulations[0].len()).map(|i| (i.value_as::<f64>().unwrap(), xt[[i]])).collect();
+        chart
+        .draw_series(
+            LineSeries::new(series, &BLACK)
+        )?;
+    }
 
     chart
         .configure_series_labels()
@@ -399,7 +423,7 @@ fn lognormal_cascade(k: &i32, mut cascade: Vec<f64>, ln_lambda: &f64, ln_theta: 
 
 
     Ok(())
-}*/
+}
 
 fn main() {
     let file = File::open(DATA_PATH).unwrap();
@@ -441,17 +465,8 @@ fn main() {
     let all_simulations: Vec<Vec<f64>> = (0..iterations).into_par_iter()
                                                         .progress_count(iterations.value_as::<u64>().unwrap())
                                                         .map(|_i| mmar_simulation(k, &holder, &ln_lambda, &ln_theta)).collect();
-    
-    let mut sorted_final_positions: Vec<f64> = all_simulations.iter().map(|v| v.last().unwrap().to_owned()).collect::<Vec<f64>>();
-    sorted_final_positions.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-    println!("{:?}", sorted_final_positions);
-    println!("{} {}", all_simulations[0].last().unwrap(), all_simulations[4].last().unwrap());
 
-    println!("len = {}", sorted_final_positions.len());
-    let (min, max) = (sorted_final_positions.first().unwrap(), sorted_final_positions.last().unwrap());
-    println!("(final positions) min = {:.2} max = {:.2}", min, max);
-
-    //plot_simulation(&all_simulations, k);
+    plot_simulation(&all_simulations, &xt, k);
 
     // {
     //     use csv::WriterBuilder;
@@ -477,7 +492,6 @@ fn mmar_simulation(k: i32, holder: &f64, ln_lambda: &f64, ln_theta: &f64) -> Vec
     let samples: usize = 10*2usize.pow(k.value_as::<u32>().unwrap()) + 1usize;
     
     let mut source = source::default().seed([rng.gen::<u64>(), rng.gen::<u64>()]);
-
     let sampled_fbm = fbm.sample(samples, magnitude, &mut source);
 
     let simulated_xt: Vec<f64> = (0 .. cascade.len()).map(|i| sampled_fbm[ (cascade[i] * 10.0) as usize]).collect();
