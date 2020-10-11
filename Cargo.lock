@@ -427,6 +427,7 @@ checksum = "ef8ae57c4978a2acd8b869ce6b9ca1dfe817bff704c220209fdef2c0b75a01b9"
 [[package]]
 name = "czt"
 version = "0.3.6"
+source = "git+https://github.com/isosphere/czt#e345b9ce25b64494bc5f7238c4924c0fb18a6fcc"
 dependencies = [
  "dft",
  "num-complex 0.1.43",
