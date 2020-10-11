@@ -24,6 +24,3 @@ rand_distr = "0.3.0"
 rayon = "1.4.1"
 roots = "0.0.6"
 stochastic = "0.5.2"
-
-[patch.crates-io]
-czt = { git = 'https://github.com/isosphere/czt' }
