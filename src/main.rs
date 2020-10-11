@@ -517,7 +517,7 @@ fn main() {
     let k: i32 = matches.value_of("k").unwrap().parse::<i32>().unwrap_or_else(|_| panic!("Invalid k specified: '{}.'", matches.value_of("k").unwrap()));
     let iterations: usize = matches.value_of("iterations").unwrap().parse::<usize>().unwrap_or_else(|_| panic!("Invalid iterations specified: '{}.'", matches.value_of("iterations").unwrap()));
     let fbm_magnitude: f64 = matches.value_of("fbm-magnitude").unwrap().parse::<f64>().unwrap_or_else(|_| panic!("Invalid fbm magnitude specified: '{}.'", matches.value_of("fbm").unwrap()));
-    let output = matches.value_of("input").unwrap();
+    let output = matches.value_of("output").unwrap();
 
     let all_simulations: Vec<Vec<f64>> = (0..iterations).into_par_iter()
                                                         .progress_count(iterations.value_as::<u64>().unwrap())
