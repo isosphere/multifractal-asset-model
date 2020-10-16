@@ -19,18 +19,20 @@ use conv::*;
 use csv::ReaderBuilder;
 use itertools_num::ItertoolsNum;
 use indicatif::ParallelProgressIterator;
+use fbm::{FBM};
+use fbm::Methods::Hosking;
 use ndarray::{Array, Array1, Array2, Axis, stack, s};
 use ndarray_csv::Array2Reader;
 use ndarray_glm::{Linear, ModelBuilder};
 use plotters::prelude::*;
-use probability::source;
+
 use num::{One, Zero};
-use rand::prelude::*;
+
 use rand::rngs::ThreadRng;
 use rand_distr::{LogNormal, Distribution};
 use rayon::prelude::*;
 use roots::{find_root_secant, SimpleConvergency};
-use stochastic::gaussian::fractional::Motion;
+
 
 #[derive(Debug)]
 struct AnalysisFailure(String);
@@ -268,7 +270,7 @@ fn test_calc_partition_function() {
     }
 }
 
-/// Calculates the Hurst-Holder exponent for a fractal series, using ndarray-glm
+/// Calculates the Hurst-Holder exponent for a fractal series, using ndarray-glm and interpolation over q
 fn calc_holder(partition_function: &Array2<f64>, moments: &Array1<f64>, factors: &[usize]) -> Result<(f64, Array2<f64>), Box<dyn Error>> {
     let highly_composite_number = factors.last().copied().unwrap();
 
@@ -405,6 +407,31 @@ fn lognormal_cascade(k: &i32, mut cascade: Vec<f64>, ln_lambda: &f64, ln_theta: 
     cascade
 }
 
+/// Simulates a multifractal model of asset returns using a combination of fractional brownian motion
+/// and a lognormal cascade of trading time to generate a multifractal series that matches the characteristics
+/// specified.
+fn mmar_simulation(k: i32, holder: &f64, ln_lambda: &f64, ln_theta: &f64, fbm_magnitude: &f64) -> Vec<f64> {
+    let mut cascade = vec![1.0, 1.0];
+    let mut rng = rand::thread_rng();
+
+    cascade = lognormal_cascade(&k, cascade, &ln_lambda, &ln_theta, &mut rng);
+    let sum = cascade.iter().sum::<f64>();
+    cascade = cascade.iter().cumsum::<f64>().map(|i| i*2.0f64.powi(k)/sum).collect(); // normalized trading time
+
+    let samples: usize = 10*2usize.pow(k.value_as::<u32>().unwrap()) + 1usize;
+    
+    let mut fbm = FBM::new(Hosking, samples, *holder, *fbm_magnitude);
+    let sampled_fbm = fbm.fbm();
+
+    //let fbm = Motion::new(*holder);
+    //let mut source = source::default().seed([rng.gen::<u64>(), rng.gen::<u64>()]);
+    //let sampled_fbm = fbm.sample(samples, *fbm_magnitude, &mut source);
+
+    let simulated_xt: Vec<f64> = (0 .. cascade.len()).map(|i| sampled_fbm[ (cascade[i] * 10.0) as usize] ).collect();
+
+    simulated_xt
+}
+
 fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>) -> Result<(), Box<dyn std::error::Error>> {
     let root = BitMapBackend::new(output, (640, 480)).into_drawing_area();
     root.fill(&WHITE)?;
@@ -424,8 +451,11 @@ fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>)
     sorted_final_positions_max.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
 
     let (min_y, max_y) = (sorted_final_positions_min.first().unwrap()*1.10, sorted_final_positions_max.last().unwrap()*1.10);
+    assert_ne!(min_y, max_y, "Chart min and max y values are the same - this can't be plotted!");
 
     let max_x = all_simulations[0].len().value_as::<f64>().unwrap()*1.10;
+    println!("Chart min_y, max_y = ({:.2}, {:.2})", min_y, max_y);
+    println!("Chart min_x, max_x = (0.0, {:.2})", max_x);
 
     let mut chart = ChartBuilder::on(&root)
         .caption("MMAR Simulations", ("sans-serif", 50).into_font())
@@ -433,7 +463,7 @@ fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>)
         .x_label_area_size(40)
         .y_label_area_size(40)
         .build_cartesian_2d(0.0f64 .. max_x, min_y..max_y)?;
-
+    
     chart.configure_mesh().draw()?;
 
     let mut upper_quartile: Vec<f64> = Vec::new();
@@ -495,6 +525,73 @@ fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>)
     Ok(())
 }
 
+fn _plot_simulation_histogram(output: &str, all_simulations: &[Vec<f64>]) -> Result<(), Box<dyn std::error::Error>> {
+    let root = BitMapBackend::new(output, (1024, 768)).into_drawing_area();
+
+    root.fill(&WHITE)?;
+
+    let mut chart = ChartBuilder::on(&root)
+        .margin(5)
+        .caption("1D Gaussian Distribution Demo", ("sans-serif", 30))
+        .set_label_area_size(LabelAreaPosition::Left, 60)
+        .set_label_area_size(LabelAreaPosition::Bottom, 60)
+        .set_label_area_size(LabelAreaPosition::Right, 60)
+        .build_cartesian_2d(-50f64..50f64, 0f64..1.0f64)?
+        .set_secondary_coord(
+            (-10f64..10f64).step(0.1).use_round().into_segmented(),
+            0u32..15000u32,
+        );
+
+    chart
+        .configure_mesh()
+        .disable_x_mesh()
+        .disable_y_mesh()
+        .y_label_formatter(&|y| format!("{:.0}%", *y * 100.0))
+        .y_desc("Percentage")
+        .draw()?;
+
+    chart.configure_secondary_axes().y_desc("Count").draw()?;
+
+    let mut return_series: Vec<f64> = Vec::new();
+    for simulation in all_simulations {
+        for n in 1 .. all_simulations[0].len() {
+            return_series.push( simulation[n]/simulation[n-1] - 1.0)
+        }
+    }
+    
+    let actual = Histogram::vertical(chart.borrow_secondary())
+        .style(GREEN.filled())
+        .margin(3)
+        .data(return_series.iter().map(|x| (*x, 1)));
+
+    println!("meow");
+
+    chart
+        .draw_secondary_series(actual)?
+        .label("Observed")
+        .legend(|(x, y)| Rectangle::new([(x, y - 5), (x + 10, y + 5)], GREEN.filled()));
+
+    // let pdf = LineSeries::new(
+    //     (-400..400).map(|x| x as f64 / 100.0).map(|x| {
+    //         (
+    //             x,
+    //             (-x * x / 2.0 / sd / sd).exp() / (2.0 * std::f64::consts::PI * sd * sd).sqrt()
+    //                 * 0.1,
+    //         )
+    //     }),
+    //     &RED,
+    // );
+
+    // chart
+    //     .draw_series(pdf)?
+    //     .label("PDF")
+    //     .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RED.filled()));
+
+    chart.configure_series_labels().draw()?;
+
+    Ok(())
+}
+
 fn main() {
     let matches = command_usage().get_matches();
 
@@ -507,19 +604,23 @@ fn main() {
             Err(_) => {panic!("Unable to process the given input file. Please ensure it contains two columns, with headers, and each column contains only floating point numbers.")}
         }
     };
-        
+    
     let xt = compound_price(&array_read);
+    let price = array_read.slice(s![.., 1]).to_owned();
+    let first_price = price[[0]];
 
     // We expect the zero crossover to occur somewhere around 2.0, so we use more points around there.
     let moments = stack![
         Axis(0),
-        Array::linspace(0.01, 0.1, 30), Array::linspace(0.11, 0.5, 30), Array::linspace(0.51, 1.24, 30),
-        Array::linspace(1.25, 2.5, 160), Array::linspace(2.51, 6.0, 30), Array::linspace(6.1, 30.0, 20)
+        Array::linspace(0.01, 0.1, 100), Array::linspace(0.11, 0.5, 100), Array::linspace(0.51, 1.24, 100),
+        Array::linspace(1.25, 2.5, 250), Array::linspace(2.51, 6.0, 100), Array::linspace(6.1, 30.0, 100)
     ];
 
     let data_size = xt.shape()[0];
     let highly_composite_number = highest_highly_composite_number(&data_size);
     let factors = (1 ..=highly_composite_number).filter(|i| highly_composite_number % i == 0).collect::<Vec<usize>>();
+
+    println!("Processed {} rows of data.", data_size);
 
     if highly_composite_number < 7560 {
         println!("Warning: at least 30 years of data is required for a good fractal analysis, see Peters, E.E., 1991. 'Chaos and order in the capital markets: a new view of cycles, prices, and market volatility'.");
@@ -540,29 +641,15 @@ fn main() {
     let fbm_magnitude: f64 = matches.value_of("fbm-magnitude").unwrap().parse::<f64>().unwrap_or_else(|_| panic!("Invalid fbm magnitude specified: '{}.'", matches.value_of("fbm").unwrap()));
     let output = matches.value_of("output").unwrap();
 
+    println!("Generating MMAR simulations.");
     let all_simulations: Vec<Vec<f64>> = (0..iterations).into_par_iter()
                                                         .progress_count(iterations.value_as::<u64>().unwrap())
                                                         .map(|_i| mmar_simulation(k, &holder, &ln_lambda, &ln_theta, &fbm_magnitude)).collect();
 
-    plot_simulation(output, &all_simulations, &xt).unwrap();
-}
+    println!("Transforming to price series.");
+    let all_simulations_price: Vec<Vec<f64>> = (0 .. iterations).map(|i| all_simulations[i].iter().map(|v| v.exp()*first_price).collect()).collect();
 
-/// Simulates a multifractal model of asset returns using a combination of fractional brownian motion
-/// and a lognormal cascade of trading time to generate a multifractal series that matches the characteristics
-/// specified.
-fn mmar_simulation(k: i32, holder: &f64, ln_lambda: &f64, ln_theta: &f64, fbm_magnitude: &f64) -> Vec<f64> {
-    let mut cascade = vec![1.0, 1.0];
-    let mut rng = rand::thread_rng();
-
-    cascade = lognormal_cascade(&k, cascade, &ln_lambda, &ln_theta, &mut rng);
-    cascade = cascade.iter().cumsum::<f64>().map(|i| i*2.0f64.powi(k)/cascade.iter().sum::<f64>()).collect(); // normalized trading time
-
-    let samples: usize = 10*2usize.pow(k.value_as::<u32>().unwrap()) + 1usize;
-    let fbm = Motion::new(*holder);
-    let mut source = source::default().seed([rng.gen::<u64>(), rng.gen::<u64>()]);
-    let sampled_fbm = fbm.sample(samples, *fbm_magnitude, &mut source);
-
-    let simulated_xt: Vec<f64> = (0 .. cascade.len()).map(|i| (sampled_fbm[ (cascade[i] * 10.0) as usize] / 100.0) ).collect();
-
-    simulated_xt
+    println!("Plotting.");
+    plot_simulation(output, &all_simulations_price, &price).unwrap();
+    //plot_simulation_histogram("distribution.png", &all_simulations).unwrap();
 }

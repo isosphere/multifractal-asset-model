@@ -543,6 +543,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fbm"
+version = "0.1.0"
+source = "git+https://github.com/isosphere/fbm#b90d453665ba974947bc11dc0c8261d0ff281e12"
+dependencies = [
+ "itertools-num",
+ "ndarray",
+ "rand 0.7.3",
+ "rand_distr",
+ "rustfft",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -916,6 +928,7 @@ dependencies = [
  "conv",
  "csv",
  "czt",
+ "fbm",
  "indicatif",
  "itertools-num",
  "ndarray",
@@ -923,12 +936,10 @@ dependencies = [
  "ndarray-glm",
  "num",
  "plotters",
- "probability 0.17.0",
  "rand 0.7.3",
  "rand_distr",
  "rayon",
  "roots",
- "stochastic",
 ]
 
 [[package]]
@@ -1257,26 +1268,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c36fa947111f5c62a733b652544dd0016a43ce89619538a8ef92724a6f501a20"
 
 [[package]]
-name = "probability"
-version = "0.15.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec2a43b46675065a24d11f19f8e088abaf07eb38e5eda0115a217758aabf82dd"
-dependencies = [
- "random",
- "special",
-]
-
-[[package]]
-name = "probability"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01935a29f0dd293b7d0254144168084cc8ada317b107635c777fb7d0fb5120e5"
-dependencies = [
- "random",
- "special",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1372,12 +1363,6 @@ checksum = "ca3129af7b92a17112d59ad498c6f81eaf463253766b90396d39ea7a39d6613c"
 dependencies = [
  "rand_core 0.5.1",
 ]
-
-[[package]]
-name = "random"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97d13a3485349981c90c79112a11222c3e6e75de1d52b87a7525b3bf5361420f"
 
 [[package]]
 name = "rawpointer"
@@ -1482,6 +1467,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "138e3e0acb6c9fb258b19b67cb8abd63c00679d2851805ea151465464fe9030a"
 dependencies = [
  "semver",
+]
+
+[[package]]
+name = "rustfft"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b422f7370bf3092b1a5f10b68f7b4719c964879836a4bd026a410f11dde2ad0d"
+dependencies = [
+ "num-complex 0.3.0",
+ "num-integer",
+ "num-traits 0.2.12",
+ "strength_reduce",
+ "transpose",
 ]
 
 [[package]]
@@ -1591,15 +1589,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "special"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24a65e074159b75dcf173a4733ab2188baac24967b5c8ec9ed87ae15fcbc7636"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "stb_truetype"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1609,14 +1598,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "stochastic"
-version = "0.5.2"
+name = "strength_reduce"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b404e04a6ab534920cd6163f58110686952b9b2fccee52cd9de0d4bb3287f5dc"
-dependencies = [
- "czt",
- "probability 0.15.12",
-]
+checksum = "a3ff2f71c82567c565ba4b3009a9350a96a7269eaa4001ebedae926230bc2254"
 
 [[package]]
 name = "strsim"
@@ -1716,6 +1701,16 @@ dependencies = [
  "libc",
  "wasi 0.10.0+wasi-snapshot-preview1",
  "winapi",
+]
+
+[[package]]
+name = "transpose"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3311ef71dea6a1fd6bf5bfc10ec5b4bef6174048f6b481dbc6ce915ff48c0a0"
+dependencies = [
+ "num-integer",
+ "strength_reduce",
 ]
 
 [[package]]

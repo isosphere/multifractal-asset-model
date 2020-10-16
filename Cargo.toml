@@ -18,9 +18,9 @@ ndarray-csv = "0.4"
 ndarray-glm = { version = "0.0.7", features = ["intel-mkl"]}
 num = "0.3"
 plotters = "0.3.0"
-probability = "0.17.0"
 rand = "0.7.3"
 rand_distr = "0.3.0"
 rayon = "1.4.1"
 roots = "0.0.6"
-stochastic = "0.5.2"
+fbm = {git = "https://github.com/isosphere/fbm"}
+#fbm = {path = "C:\\Users\\Matt\\Documents\\Development\\Rust\\fbm"}
