@@ -450,10 +450,28 @@ fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>)
     }).collect::<Vec<f64>>();
     sorted_final_positions_max.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
 
-    let (min_y, max_y) = (sorted_final_positions_min.first().unwrap()*1.10, sorted_final_positions_max.last().unwrap()*1.10);
+    let (mut xt_min, mut xt_max) = (0.0, 0.0);
+    for e in xt {
+        if *e > xt_max { xt_max = *e }
+        else if *e < xt_min { xt_min = *e }
+    }
+
+    let (min_y, max_y) = {
+        (
+            match f64::partial_cmp(sorted_final_positions_min.first().unwrap(), &xt_min) {
+                Some(Ordering::Less) => { *sorted_final_positions_min.first().unwrap() },
+                _ => { xt_min }
+            }*1.10, 
+            match f64::partial_cmp(sorted_final_positions_max.last().unwrap(), &xt_max) {
+                Some(Ordering::Greater) => { *sorted_final_positions_max.last().unwrap() },
+                _ => { xt_max }
+            }*1.10
+        )
+    };
+
     assert_ne!(min_y, max_y, "Chart min and max y values are the same - this can't be plotted!");
 
-    let max_x = all_simulations[0].len().value_as::<f64>().unwrap()*1.10;
+    let max_x = xt.shape()[0] as f64;
     println!("Chart min_y, max_y = ({:.2}, {:.2})", min_y, max_y);
     println!("Chart min_x, max_x = (0.0, {:.2})", max_x);
 
@@ -462,7 +480,7 @@ fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>)
         .margin(5)
         .x_label_area_size(40)
         .y_label_area_size(40)
-        .build_cartesian_2d(0.0f64 .. max_x, min_y..max_y)?;
+        .build_cartesian_2d(0.0 .. max_x, min_y .. max_y)?;
     
     chart.configure_mesh().draw()?;
 
@@ -509,7 +527,7 @@ fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>)
     }
 
     {
-        let series: Vec<(f64, f64)> = (0 .. all_simulations[0].len()).map(|i| (i.value_as::<f64>().unwrap(), xt[[i]])).collect();
+        let series: Vec<(f64, f64)> = (0 .. xt.shape()[0]).map(|i| (i as f64, xt[[i]])).collect();
         chart
         .draw_series(
             LineSeries::new(series, &BLACK)
