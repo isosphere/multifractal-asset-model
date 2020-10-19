@@ -5,6 +5,7 @@ extern crate ndarray;
 extern crate ndarray_csv;
 
 use std::{
+    cmp::Ordering,
     error::Error,
     fmt,
     fs::OpenOptions,
@@ -20,14 +21,12 @@ use csv::ReaderBuilder;
 use itertools_num::ItertoolsNum;
 use indicatif::ParallelProgressIterator;
 use fbm::{FBM};
-use fbm::Methods::Hosking;
+use fbm::Methods::{Hosking, DaviesHarte};
 use ndarray::{Array, Array1, Array2, Axis, stack, s};
 use ndarray_csv::Array2Reader;
 use ndarray_glm::{Linear, ModelBuilder};
-use plotters::prelude::*;
-
 use num::{One, Zero};
-
+use plotters::prelude::*;
 use rand::rngs::ThreadRng;
 use rand_distr::{LogNormal, Distribution};
 use rayon::prelude::*;
