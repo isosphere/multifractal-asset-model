@@ -409,7 +409,8 @@ fn lognormal_cascade(k: &i32, mut cascade: Vec<f64>, ln_lambda: &f64, ln_theta: 
 /// Simulates a multifractal model of asset returns using a combination of fractional brownian motion
 /// and a lognormal cascade of trading time to generate a multifractal series that matches the characteristics
 /// specified.
-fn mmar_simulation(k: i32, holder: &f64, ln_lambda: &f64, ln_theta: &f64, fbm_magnitude: &f64) -> Vec<f64> {
+fn mmar_simulation(k: i32, holder: &f64, ln_lambda: &f64, ln_theta: &f64, fbm_magnitude: &f64, low_limit: Option<f64>) -> Vec<f64> {
+    {
     let mut cascade = vec![1.0, 1.0];
     let mut rng = rand::thread_rng();
 
@@ -419,16 +420,16 @@ fn mmar_simulation(k: i32, holder: &f64, ln_lambda: &f64, ln_theta: &f64, fbm_ma
 
     let samples: usize = 10*2usize.pow(k.value_as::<u32>().unwrap()) + 1usize;
     
-    let mut fbm = FBM::new(Hosking, samples, *holder, *fbm_magnitude);
+        let mut fbm = FBM::new(DaviesHarte, samples, *holder, *fbm_magnitude);
     let sampled_fbm = fbm.fbm();
 
-    //let fbm = Motion::new(*holder);
-    //let mut source = source::default().seed([rng.gen::<u64>(), rng.gen::<u64>()]);
-    //let sampled_fbm = fbm.sample(samples, *fbm_magnitude, &mut source);
-
     let simulated_xt: Vec<f64> = (0 .. cascade.len()).map(|i| sampled_fbm[ (cascade[i] * 10.0) as usize] ).collect();
+        if low_limit.is_none() || !simulated_xt.iter().any(|v| *v <= low_limit.unwrap()) {
+            return simulated_xt;
+        }
+    }
 
-    simulated_xt
+    mmar_simulation(k, holder, ln_lambda, ln_theta, fbm_magnitude, low_limit)
 }
 
 fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>) -> Result<(), Box<dyn std::error::Error>> {
@@ -661,7 +662,7 @@ fn main() {
     println!("Generating MMAR simulations.");
     let all_simulations: Vec<Vec<f64>> = (0..iterations).into_par_iter()
                                                         .progress_count(iterations.value_as::<u64>().unwrap())
-                                                        .map(|_i| mmar_simulation(k, &holder, &ln_lambda, &ln_theta, &fbm_magnitude)).collect();
+                                                        .map(|_i| mmar_simulation(k, &holder, &ln_lambda, &ln_theta, &fbm_magnitude, Some(0.0))).collect();
 
     println!("Transforming to price series.");
     let all_simulations_price: Vec<Vec<f64>> = (0 .. iterations).map(|i| all_simulations[i].iter().map(|v| v.exp()*first_price).collect()).collect();
