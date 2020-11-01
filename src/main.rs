@@ -498,6 +498,8 @@ fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>)
     }
     
     let mut flag = true;
+    let simulation_colour = RGBColor(255, 69, 0).mix(0.2);
+    
     for simulation in all_simulations {
         let series: Vec<(f64, f64)> = (0 .. simulation.len()).map(|i| (i.value_as::<f64>().unwrap(), simulation[i])).collect();
         
@@ -505,13 +507,13 @@ fn plot_simulation(output: &str, all_simulations: &[Vec<f64>], xt: &Array1<f64>)
             false => {
                 chart
                 .draw_series(
-                    LineSeries::new(series, &RED)
+                    LineSeries::new(series, &simulation_colour)
                 )?;
             },
             true => {
                 chart
                 .draw_series(
-                    LineSeries::new(series, &RED)
+                    LineSeries::new(series, &simulation_colour)
                 )?.label("simulated").legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
                 flag = false;
             }
