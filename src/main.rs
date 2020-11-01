@@ -47,7 +47,7 @@ impl Error for AnalysisFailure {}
 fn command_usage<'a, 'b>() -> App<'a, 'b> {
     const DEFAULT_K: &str = "13";
     const DEFAULT_ITERATIONS: &str = "1000";
-    const DEFAULT_FBM_MAGNITUDE: &str = "0.10";
+    const DEFAULT_FBM_MAGNITUDE: &str = "1.00";
     const DEFAULT_OUTPUT: &str = "mmar.png";
 
     App::new("multifractal-asset-model")
