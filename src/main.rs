@@ -69,6 +69,13 @@ fn command_usage<'a, 'b>() -> App<'a, 'b> {
             .help("Determines how many days to simulate: 2^k")
     )
     .arg(
+        Arg::with_name("hurst")
+            .short("h")
+            .long("hurst")
+            .takes_value(true)
+            .help("Override hurst exponent")
+    )    
+    .arg(
         Arg::with_name("iterations")
             .long("iterations")
             .short("i")
@@ -652,7 +659,14 @@ fn main() {
 
     let partition_function = calc_partition_function(&xt, &moments, &factors);
 
-    let (holder, tau_q) = calc_holder(&partition_function, &moments, &factors).unwrap();
+    let (holder, tau_q) = match matches.is_present("hurst") {
+        true => (
+            matches.value_of("hurst").unwrap().parse::<f64>().unwrap_or_else(|_| panic!("Invalid hurst exponent override specified: '{}'.", matches.value_of("hurst").unwrap())),
+            calc_holder(&partition_function, &moments, &factors).unwrap().1
+        ),
+        false => calc_holder(&partition_function, &moments, &factors).unwrap()
+    };
+
     println!("Full-series holder exponent estimated via linear interpolation: {:.2}", holder);
     let (_f_a, ln_lambda, ln_theta) = calc_spectrum(&tau_q).unwrap();
 
