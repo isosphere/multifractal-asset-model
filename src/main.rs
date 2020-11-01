@@ -338,8 +338,10 @@ fn _holder_stability(factors: &[usize], partition_function: &Array2<f64>, moment
     }
 }
 
+type FractalSpectrum = (Array2<f64>, f64, f64, f64);
+
 /// Estimate the fractal spectrum given the taq(q) matrix. Returns the required parameters for the MMAR simulation.
-fn calc_spectrum(tau_q: &Array2<f64>) -> Result<(Array2<f64>, f64, f64), Box<dyn Error>> {
+fn calc_spectrum(tau_q: &Array2<f64>) -> Result<FractalSpectrum, Box<dyn Error>> {
     let mut max_q = None;
 
     for (m, q) in tau_q.slice(s![.., 0]).iter().enumerate() {
@@ -389,7 +391,7 @@ fn calc_spectrum(tau_q: &Array2<f64>) -> Result<(Array2<f64>, f64, f64), Box<dyn
     println!("alpha zero = {:.2}", alpha_zero);
     println!("lambda = {:.2} sigma^2 = {:.2} (assuming we partition our cascade in two at each step)", lambda, sigma);
 
-    Ok((result, lambda, sigma))
+    Ok((result, lambda, sigma, h_estimate))
 }
 
 /// Recursive function that generates a lognormal multiplicative cascade to be used as "trading time"
@@ -668,7 +670,7 @@ fn main() {
     };
 
     println!("Full-series holder exponent estimated via linear interpolation: {:.2}", holder);
-    let (_f_a, ln_lambda, ln_theta) = calc_spectrum(&tau_q).unwrap();
+    let (_f_a, ln_lambda, ln_theta, _holder_spectrum) = calc_spectrum(&tau_q).unwrap();
 
     let k: i32 = matches.value_of("k").unwrap().parse::<i32>().unwrap_or_else(|_| panic!("Invalid k specified: '{}.'", matches.value_of("k").unwrap()));
     let iterations: usize = matches.value_of("iterations").unwrap().parse::<usize>().unwrap_or_else(|_| panic!("Invalid iterations specified: '{}.'", matches.value_of("iterations").unwrap()));
