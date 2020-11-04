@@ -621,6 +621,45 @@ fn _plot_simulation_histogram(output: &str, all_simulations: &[Vec<f64>]) -> Res
     Ok(())
 }
 
+// Translated from https://github.com/ritchieng/fractional_differencing_gpu/blob/master/notebooks/gpu_fractional_differencing.ipynb
+fn floored_weights(d: f64, k: usize, floor: f64) -> Vec<f64> {
+    let mut w_k = vec![1.0];
+
+    for i in 1 .. k {
+        let w_current: f64 = -w_k.last().unwrap() * (d - (i as f64) + 1.0) / i as f64;
+
+        if w_current.abs() <= floor {
+            break
+        }
+        w_k.push(w_current);
+    }
+
+    w_k
+}
+
+fn fractionally_difference(series: &Array2<f64>, d:f64, floor: f64) -> Vec<f64> {
+    let n = series.shape()[0];
+
+    let weights: Array1<f64> = { 
+        let mut forward_weights = floored_weights(d, n, floor);
+        forward_weights.reverse();
+        Array1::from(forward_weights)
+    };
+    let w_n = weights.shape()[0];
+
+    let mut series_diff: Vec<f64> = Vec::new();
+
+    assert!(w_n < n, "Window is not smaller than data shape: consider increasing the floor parameter.");
+
+    for i in w_n .. n {
+        series_diff.push(
+            weights.dot(&series.slice(s![i - w_n .. i, 1]))
+        )
+    }
+
+    series_diff
+}
+
 fn main() {
     let matches = command_usage().get_matches();
 
