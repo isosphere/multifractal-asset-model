@@ -637,8 +637,13 @@ fn floored_weights(d: f64, k: usize, floor: f64) -> Vec<f64> {
     w_k
 }
 
-fn fractionally_difference(series: &Array2<f64>, d:f64, floor: f64) -> Vec<f64> {
+fn fractionally_difference(series: &Array2<f64>, d:f64, floor: f64, log: bool) -> Vec<f64> {
     let n = series.shape()[0];
+
+    let target = match log {
+        true => series.map(|x| x.ln()),
+        false => series.to_owned()
+    };
 
     let weights: Array1<f64> = { 
         let mut forward_weights = floored_weights(d, n, floor);
@@ -653,7 +658,7 @@ fn fractionally_difference(series: &Array2<f64>, d:f64, floor: f64) -> Vec<f64> 
 
     for i in w_n .. n {
         series_diff.push(
-            weights.dot(&series.slice(s![i - w_n .. i, 1]))
+            weights.dot(&target.slice(s![i - w_n .. i, 1]))
         )
     }
 
