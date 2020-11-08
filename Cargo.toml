@@ -22,5 +22,5 @@ rand = "0.7.3"
 rand_distr = "0.3.0"
 rayon = "1.4.1"
 roots = "0.0.6"
-fbm = {git = "https://github.com/isosphere/fbm"}
-#fbm = {path = "C:\\Users\\Matt\\Documents\\Development\\Rust\\fbm"}
+#fbm = {git = "https://github.com/isosphere/fbm"}
+fbm = {path = "C:\\Users\\Matt\\Documents\\Development\\Rust\\fbm"}

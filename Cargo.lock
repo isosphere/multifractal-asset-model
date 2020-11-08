@@ -545,10 +545,10 @@ dependencies = [
 [[package]]
 name = "fbm"
 version = "0.1.0"
-source = "git+https://github.com/isosphere/fbm#b90d453665ba974947bc11dc0c8261d0ff281e12"
 dependencies = [
  "itertools-num",
  "ndarray",
+ "ndarray-linalg",
  "rand 0.7.3",
  "rand_distr",
  "rustfft",
